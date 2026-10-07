@@ -1,0 +1,300 @@
+"""Launch anti-detect browser profiles with vendored Camoufox.
+
+This module builds Camoufox launch options from a persona dict (produced by
+the profiles worker) and launches the browser. It never launches anything at
+import time and never downloads anything; the Camoufox browser binary is
+installed on the user's machine by ``setup_browser.py``.
+
+Kwargs-building is factored into the pure function
+:func:`build_launch_kwargs`, which is unit-testable without launching.
+
+Design notes
+------------
+* Persona ``os`` values are mapped case-insensitively to camoufox's expected
+  values (``'windows'`` / ``'macos'`` / ``'linux'``).
+* Persona fields that describe the *generated* fingerprint (``user_agent``,
+  ``platform``, ``viewport``, ``screen``, ``webgl_vendor``,
+  ``webgl_renderer``, ``hardware_concurrency``, ``device_memory``,
+  ``touch_points``, ``color_depth``, ``fonts``, ``canvas_seed``) are
+  intentionally NOT forced into camoufox launch options: camoufox's fpgen
+  builds a whole-identity fingerprint coherent with the requested OS, and
+  forcing mismatched parts would break that consistency. Only the
+  launch-level options listed in the contract (plus ``timezone_id``, which
+  Playwright applies natively) are passed.
+* Geolocation: persona ``geolocation`` is expected as a Playwright-style
+  dict ``{'latitude': float, 'longitude': float}`` (``'lat'``/``'lng'``
+  aliases are also accepted). When present we pass ``geoip=False`` and hand
+  the dict to Playwright's ``launch_persistent_context`` natively, together
+  with ``permissions=['geolocation']`` so pages see the permission as
+  granted, like a real Firefox with a stored site grant. When absent but a proxy
+  is set we pass ``geoip=True`` so camoufox derives locale/timezone/
+  geolocation from the proxy exit IP. When neither is present, ``geoip`` is
+  not passed at all.
+* Persistence uses camoufox's ``persistent_context=True`` path, which
+  forwards ``user_data_dir`` to Playwright's
+  ``launch_persistent_context``. ``__enter__`` then returns a
+  ``BrowserContext`` directly (not a ``Browser``); the wrapper exposes it
+  as ``.browser`` and documents that. The profile's user-data directory
+  ``~/.antidetect-browser/profiles/<name>/`` is always created, even if a
+  future camoufox change ever alters the persistence path.
+"""
+
+import os
+
+import src._vendor  # noqa: F401  (must be first: enables vendored imports)
+
+from camoufox.sync_api import Camoufox
+
+_DATA_HOME = os.path.join(os.path.expanduser("~"), ".antidetect-browser")
+_PROFILE_DIR = os.path.join(_DATA_HOME, "profiles")
+
+# persona['os'] -> camoufox `os` kwarg value
+_OS_MAP = {
+    "windows": "windows",
+    "win": "windows",
+    "macos": "macos",
+    "mac": "macos",
+    "osx": "macos",
+    "darwin": "macos",
+    "linux": "linux",
+}
+
+_PROXY_TYPES = {"http", "https", "socks5", "socks4"}
+
+
+def _map_os(persona_os) -> str:
+    """Map a persona OS string to a camoufox `os` value.
+
+    Raises:
+        ValueError: If the OS is not recognised.
+    """
+    if not isinstance(persona_os, str):
+        raise ValueError(f"persona os must be a string, got {persona_os!r}")
+    mapped = _OS_MAP.get(persona_os.strip().lower())
+    if mapped is None:
+        raise ValueError(
+            f"unsupported persona os {persona_os!r}; "
+            f"expected one of {sorted(set(_OS_MAP))}"
+        )
+    return mapped
+
+
+def _normalize_geolocation(geo) -> dict:
+    """Normalize a persona geolocation dict to Playwright format.
+
+    Accepts ``{'latitude', 'longitude'}`` (optionally ``'accuracy'``) or the
+    ``{'lat', 'lng'}`` aliases.
+
+    Raises:
+        ValueError: If the dict is missing coordinates or they are not
+            numeric.
+    """
+    lat = geo.get("latitude", geo.get("lat"))
+    lng = geo.get("longitude", geo.get("lng"))
+    if lat is None or lng is None:
+        raise ValueError(
+            "persona geolocation needs latitude/longitude (or lat/lng), "
+            f"got {geo!r}"
+        )
+    try:
+        lat, lng = float(lat), float(lng)
+    except (TypeError, ValueError):
+        raise ValueError(
+            f"persona geolocation coordinates must be numeric, got {geo!r}"
+        )
+    result = {"latitude": lat, "longitude": lng}
+    if geo.get("accuracy") is not None:
+        result["accuracy"] = float(geo["accuracy"])
+    return result
+
+
+def _build_proxy_kwargs(proxy) -> dict:
+    """Build the camoufox ``proxy``/``block_webrtc`` kwargs.
+
+    ``proxy`` is the ProxyManager-style dict (``host``, ``port``,
+    ``username``, ``password``, ``type``); returns ``{}`` when ``proxy`` is
+    falsy.
+    """
+    if not proxy:
+        return {}
+    ptype = str(proxy.get("type", "http")).lower()
+    if ptype not in _PROXY_TYPES:
+        raise ValueError(
+            f"unsupported proxy type {proxy.get('type')!r}; "
+            f"expected one of {sorted(_PROXY_TYPES)}"
+        )
+    server = f"{ptype}://{proxy['host']}:{proxy['port']}"
+    opts = {"server": server}
+    if proxy.get("username"):
+        opts["username"] = proxy["username"]
+    if proxy.get("password") is not None:
+        opts["password"] = proxy["password"]
+    return {"proxy": opts, "block_webrtc": True}
+
+
+def build_launch_kwargs(persona: dict, headless: bool = False) -> dict:
+    """Build the keyword arguments for ``Camoufox(**kwargs)`` from a persona.
+
+    Pure function: performs no I/O and launches nothing.
+
+    Args:
+        persona: Persona dict with keys ``name``, ``os``, ``locale``,
+            ``geolocation`` (or ``None``), ``proxy`` (dict or ``None``),
+            ``timezone`` (optional). Other keys are ignored (see module
+            docstring).
+        headless: Passed through to camoufox.
+
+    Returns:
+        Dict of kwargs ready for ``Camoufox(**kwargs)`` plus
+        ``persistent_context=True`` / ``user_data_dir`` handling done by
+        :func:`launch_profile`.
+
+    Raises:
+        KeyError: If ``name`` or ``os`` is missing from the persona.
+        ValueError: On an unrecognised OS, proxy type, or malformed
+            geolocation.
+    """
+    name = persona["name"]
+    kwargs = {
+        "headless": headless,
+        "humanize": True,
+        "os": [_map_os(persona["os"])],
+    }
+
+    locale = persona.get("locale")
+    if locale:
+        kwargs["locale"] = locale
+
+    timezone = persona.get("timezone")
+    if timezone:
+        kwargs["timezone_id"] = timezone
+
+    geo = persona.get("geolocation")
+    proxy = persona.get("proxy")
+    if geo:
+        kwargs["geoip"] = False
+        kwargs["geolocation"] = _normalize_geolocation(geo)
+        # Playwright-native geolocation on launch_persistent_context; grant
+        # the permission up front so pages see it as allowed, like a real
+        # Firefox with a stored site grant.
+        kwargs["permissions"] = ["geolocation"]
+    elif proxy:
+        kwargs["geoip"] = True
+    # else: neither proxy nor geolocation -> leave geoip unset entirely
+
+    kwargs.update(_build_proxy_kwargs(proxy))
+    if not proxy:
+        kwargs["block_webrtc"] = False
+
+    kwargs["persistent_context"] = True
+    kwargs["user_data_dir"] = os.path.join(_PROFILE_DIR, name)
+    return kwargs
+
+
+class LaunchedProfile:
+    """Wrapper around a launched camoufox profile.
+
+    Attributes:
+        page: The Playwright ``Page`` to drive.
+        browser: The underlying launched object. For persistent launches
+            (always, via :func:`launch_profile`) this is a Playwright
+            ``BrowserContext``; exposed for advanced use.
+    """
+
+    def __init__(self, camoufox, browser, page):
+        """Wrap an already-entered Camoufox instance.
+
+        Args:
+            camoufox: The ``Camoufox`` instance whose ``__enter__`` was
+                already called (so its Playwright session is live).
+            browser: What ``__enter__`` returned (a ``BrowserContext`` for
+                persistent launches).
+            page: A fresh ``Page`` from that context.
+        """
+        self._camoufox = camoufox
+        self._browser = browser
+        self._page = page
+        self._closed = False
+
+    @property
+    def page(self):
+        """The Playwright page for this profile."""
+        return self._page
+
+    @property
+    def browser(self):
+        """The underlying launched object (a ``BrowserContext`` for
+        persistent launches)."""
+        return self._browser
+
+    def close(self):
+        """Close the profile cleanly: tears down the context and the
+        Camoufox Playwright session. Safe to call more than once."""
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            self._page.close()
+        except Exception:
+            pass
+        # Camoufox.__exit__ closes the context/browser and stops the
+        # Playwright session, preventing event-loop leaks in this thread.
+        self._camoufox.__exit__(None, None, None)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.close()
+        return False
+
+
+def browser_binary_present() -> bool:
+    """Return True if a camoufox browser build usable by the vendored library
+    is installed (no download attempted).
+
+    Uses the vendored package's own ``camoufox_path(download_if_missing=False)``
+    resolution, so the answer matches what :func:`launch_profile` would find.
+    """
+    try:
+        from camoufox.pkgman import camoufox_path
+        camoufox_path(download_if_missing=False)
+        return True
+    except Exception:
+        return False
+
+
+def launch_profile(persona: dict, headless: bool = False) -> LaunchedProfile:
+    """Launch a browser for a persona and return a :class:`LaunchedProfile`.
+
+    Creates the per-profile user-data dir
+    ``~/.antidetect-browser/profiles/<name>/`` and launches camoufox with
+    ``persistent_context=True`` so cookies, storage, and logins survive
+    across runs of the same profile name.
+
+    Args:
+        persona: Persona dict (see :func:`build_launch_kwargs`).
+        headless: Run the browser headless.
+
+    Returns:
+        A :class:`LaunchedProfile` exposing ``.page``, ``.browser`` and
+        ``.close()``.
+
+    Raises:
+        KeyError / ValueError: From :func:`build_launch_kwargs` on a bad
+            persona.
+        Exception: If the camoufox browser binary is missing (installed on
+            the user's machine by ``setup_browser.py``) or the launch
+            otherwise fails.
+    """
+    kwargs = build_launch_kwargs(persona, headless=headless)
+    os.makedirs(kwargs["user_data_dir"], exist_ok=True)
+
+    camoufox = Camoufox(**kwargs)
+    browser = camoufox.__enter__()
+    try:
+        page = browser.new_page()
+    except Exception:
+        camoufox.__exit__(None, None, None)
+        raise
+    return LaunchedProfile(camoufox, browser, page)
