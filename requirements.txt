@@ -2,6 +2,7 @@
 # The vendored camoufox package still needs these runtime deps (install once):
 # Vendored browser/fingerprint code lives in vendor/ (no pip install needed for those).
 apify-fingerprint-datapoints
+cryptography
 language-tags
 numpy
 orjson

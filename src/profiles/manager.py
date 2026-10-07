@@ -12,13 +12,18 @@ The ``profiles`` table is:
     timezone TEXT
     locale TEXT
     created_at TEXT          -- UTC ISO-8601 timestamp
-    fingerprint_json TEXT    -- the ENTIRE persona dict serialized as JSON
+    fingerprint_json TEXT    -- the persona dict serialized as JSON
+    client_tag TEXT          -- agency client label (added via migration)
+    template TEXT            -- template name the profile was built from
 
-``name``, ``os``, ``timezone`` and ``locale`` exist as real columns so personas
-are queryable by those attributes without parsing JSON.  Everything else lives
-inside ``fingerprint_json``.  ``get()``/``list()`` rebuild the full persona dict
-from ``fingerprint_json`` (overlaid with the authoritative ``name`` column), so
-the returned dict always contains every contract key.
+``name``, ``os``, ``timezone``, ``locale``, ``client_tag`` and ``template``
+exist as real columns so personas are queryable by those attributes without
+parsing JSON.  Everything else lives inside ``fingerprint_json`` (the two
+meta keys are deliberately kept OUT of the JSON blob to avoid duplication).
+``get()``/``list()`` rebuild the full persona dict from ``fingerprint_json``
+(overlaid with the authoritative ``name`` column, plus ``client_tag`` and
+``template`` restored from their columns), so the returned dict always
+contains every contract key.
 """
 
 import src._vendor  # noqa: F401  -- makes vendored browserforge importable
@@ -105,6 +110,15 @@ _FALLBACK_FINGERPRINTS = {
         "touch_points": 0,
     },
 }
+
+
+# Persona keys that live in dedicated DB columns instead of fingerprint_json,
+# so they are never duplicated inside the JSON blob.
+_META_KEYS = ("client_tag", "template")
+
+# Sentinel distinguishing "field not passed" from "field passed as None"
+# in update().
+_UNSET = object()
 
 
 def _default_db_path():
@@ -204,7 +218,11 @@ class ProfileManager:
         return conn
 
     def _init_db(self):
-        """Create the ``profiles`` table if it does not exist."""
+        """Create the ``profiles`` table if it does not exist.
+
+        Also migrates databases created before the ``client_tag``/``template``
+        columns existed: any missing column is added via ``ALTER TABLE``.
+        """
         with self._connect() as conn:
             conn.execute(
                 """
@@ -218,9 +236,20 @@ class ProfileManager:
                 )
                 """
             )
+            existing = {r["name"]
+                        for r in conn.execute("PRAGMA table_info(profiles)")}
+            if "client_tag" not in existing:
+                conn.execute("ALTER TABLE profiles ADD COLUMN client_tag TEXT")
+            if "template" not in existing:
+                conn.execute("ALTER TABLE profiles ADD COLUMN template TEXT")
 
     def _insert(self, persona):
-        """Persist a persona; raise ValueError if the name already exists."""
+        """Persist a persona; raise ValueError if the name already exists.
+
+        ``client_tag``/``template`` are stored in their own columns and are
+        stripped from ``fingerprint_json`` so the data is not duplicated.
+        """
+        clean = {k: v for k, v in persona.items() if k not in _META_KEYS}
         row = {
             "name": persona["name"],
             "os": persona["os"],
@@ -228,7 +257,9 @@ class ProfileManager:
             "locale": persona.get("locale"),
             "created_at": datetime.datetime.now(datetime.timezone.utc)
             .isoformat(),
-            "fingerprint_json": json.dumps(persona),
+            "fingerprint_json": json.dumps(clean),
+            "client_tag": persona.get("client_tag"),
+            "template": persona.get("template"),
         }
         try:
             with self._connect() as conn:
@@ -236,10 +267,10 @@ class ProfileManager:
                     """
                     INSERT INTO profiles
                         (name, os, timezone, locale, created_at,
-                         fingerprint_json)
+                         fingerprint_json, client_tag, template)
                     VALUES
                         (:name, :os, :timezone, :locale, :created_at,
-                         :fingerprint_json)
+                         :fingerprint_json, :client_tag, :template)
                     """,
                     row,
                 )
@@ -252,23 +283,40 @@ class ProfileManager:
         """Rebuild the full persona dict from a database row."""
         persona = json.loads(row["fingerprint_json"])
         persona["name"] = row["name"]  # PK is authoritative
+        # Columns are authoritative for meta keys; fall back to None when the
+        # row predates the migration (defensive: _init_db always migrates).
+        keys = row.keys()
+        persona["client_tag"] = (row["client_tag"]
+                                 if "client_tag" in keys else None)
+        persona["template"] = (row["template"]
+                               if "template" in keys else None)
         return persona
 
-    def create(self, name, os="windows", proxy=None, **overrides):
+    def create(self, name, os="windows", proxy=None, client_tag=None,
+               template=None, **overrides):
         """Create and persist a new persona.
 
         :param name: unique profile name; must be a non-empty string.
         :param os: one of ``'windows'``, ``'macos'``, ``'linux'``.
         :param proxy: proxy dict (host/port/username/password/type) or None.
+        :param client_tag: agency client label, stored in its own column.
+        :param template: template name the profile was built from, stored in
+            its own column.  Neither is duplicated inside ``fingerprint_json``.
         :param overrides: extra fields merged into the persona (win).
-        :return: the persona dict.
+        :return: the persona dict (including ``client_tag``/``template``).
         :raises ValueError: on duplicate name, empty name or unknown os.
         """
         if not isinstance(name, str) or not name:
             raise ValueError("name must be a non-empty string")
         if os not in _VALID_OS:
             raise ValueError("os must be one of %s" % (_VALID_OS,))
+        # Belt and braces: the named params above already bind these, but a
+        # caller could not reach here with them inside overrides otherwise.
+        overrides.pop("client_tag", None)
+        overrides.pop("template", None)
         persona = _generate_persona(name, os, proxy, overrides)
+        persona["client_tag"] = client_tag
+        persona["template"] = template
         self._insert(persona)
         return persona
 
@@ -310,29 +358,95 @@ class ProfileManager:
         The ``name`` primary key cannot be changed: attempting to pass
         ``name=...`` raises ``TypeError`` (duplicate argument binding), which
         guarantees the stored name always matches the row key.  Fields may
-        also introduce new keys.
+        also introduce new keys.  ``client_tag``/``template`` are stored in
+        their dedicated columns (kept out of ``fingerprint_json``); every
+        other field lands in the JSON blob.
 
         :return: the updated persona dict.
         :raises KeyError: if no profile with ``name`` exists.
         """
+        client_tag = fields.pop("client_tag", _UNSET)
+        template = fields.pop("template", _UNSET)
         persona = self.get(name)  # raises KeyError when missing
         persona.update(fields)
+        if client_tag is not _UNSET:
+            persona["client_tag"] = client_tag
+        if template is not _UNSET:
+            persona["template"] = template
+        clean = {k: v for k, v in persona.items() if k not in _META_KEYS}
+        set_clause = ("os = :os, timezone = :timezone, locale = :locale, "
+                      "fingerprint_json = :fingerprint_json")
+        params = {
+            "name": persona["name"],
+            "os": persona["os"],
+            "timezone": persona.get("timezone"),
+            "locale": persona.get("locale"),
+            "fingerprint_json": json.dumps(clean),
+        }
+        if client_tag is not _UNSET:
+            set_clause += ", client_tag = :client_tag"
+            params["client_tag"] = client_tag
+        if template is not _UNSET:
+            set_clause += ", template = :template"
+            params["template"] = template
         with self._connect() as conn:
             conn.execute(
-                """
-                UPDATE profiles
-                SET os = :os,
-                    timezone = :timezone,
-                    locale = :locale,
-                    fingerprint_json = :fingerprint_json
-                WHERE name = :name
-                """,
-                {
-                    "name": persona["name"],
-                    "os": persona["os"],
-                    "timezone": persona.get("timezone"),
-                    "locale": persona.get("locale"),
-                    "fingerprint_json": json.dumps(persona),
-                },
+                "UPDATE profiles SET %s WHERE name = :name" % set_clause,
+                params,
             )
         return persona
+
+    def bulk_create(self, items):
+        """Create many profiles, never raising on per-item failures.
+
+        :param items: list of dicts, each of the form
+            ``{'name': ..., 'os': ..., 'proxy': ..., 'client_tag': ...,
+            'template': ..., **overrides}``.  Only ``name`` is required;
+            ``os`` defaults to ``'windows'`` and the rest default to None.
+        :return: ``{'created': int, 'skipped': list, 'errors': list}`` where
+            ``skipped`` holds names that already existed (duplicates do not
+            raise) and ``errors`` holds ``{'name': ..., 'error': str}`` dicts
+            for every other failure (empty name, unknown os, ...).  The
+            caller's ``items`` dicts are not mutated.
+        """
+        result = {"created": 0, "skipped": [], "errors": []}
+        for item in items:
+            item = dict(item)
+            name = item.pop("name", None)
+            try:
+                self.create(
+                    name,
+                    os=item.pop("os", "windows"),
+                    proxy=item.pop("proxy", None),
+                    client_tag=item.pop("client_tag", None),
+                    template=item.pop("template", None),
+                    **item,
+                )
+                result["created"] += 1
+            except ValueError as exc:
+                # Duplicate name -> skip; any other ValueError (empty name,
+                # unknown os) -> error.  Distinguish by re-reading: if the
+                # profile now exists, the insert failed on the PK.
+                try:
+                    self.get(name)
+                except (KeyError, TypeError):
+                    result["errors"].append(
+                        {"name": name, "error": str(exc)})
+                else:
+                    result["skipped"].append(name)
+            except Exception as exc:  # never let one bad row stop the batch
+                result["errors"].append({"name": name, "error": str(exc)})
+        return result
+
+    def list_by_tag(self, tag):
+        """Return all personas whose ``client_tag`` equals ``tag``.
+
+        :param tag: client label to filter by (exact match).
+        :return: list of persona dicts, ordered by name.
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM profiles WHERE client_tag = ? ORDER BY name",
+                (tag,),
+            ).fetchall()
+        return [self._row_to_persona(row) for row in rows]

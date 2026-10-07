@@ -12,9 +12,17 @@ the same ``~/.antidetect-browser/`` home directory.
 
 Security note
 -------------
-Credentials are stored in plaintext in a local SQLite file readable only by
-the owning user. This store is meant for a single-user local machine; do not
-copy the file to shared hosts.
+Proxy AUTH passwords are encrypted at rest with the master Fernet key
+(``~/.antidetect-browser/.master.key``, see :mod:`src.security.crypto`).
+:meth:`ProxyManager.add` stores a password as ``"enc:" + encrypt_str(...)``
+unless the value already carries the ``"enc:"`` marker; :meth:`get` and
+:meth:`list` decrypt it (marker stripped) before returning, so callers
+always see plaintext. Rows written before this change (plaintext, no
+marker) are returned as-is — legacy compatibility, not a guarantee going
+forward. Rotating the master key orphans all ``"enc:"`` passwords.
+
+The store is meant for a single-user local machine; do not copy the file
+to shared hosts.
 
 The :meth:`ProxyManager.test` method only checks TCP reachability of the
 proxy host:port with a 5-second timeout. It does NOT perform a proxy-protocol
@@ -82,12 +90,22 @@ class ProxyManager:
 
     @staticmethod
     def _row_to_dict(row: sqlite3.Row) -> dict:
+        # Passwords come back decrypted: values stored as "enc:<token>"
+        # are decrypted with the master key; legacy plaintext rows (no
+        # marker) are returned as-is. InvalidToken propagates for
+        # tampered / wrong-key data — that is a real failure, not noise.
+        password = row["password"]
+        if password is not None:
+            from src.security.crypto import decrypt_str, is_encrypted
+
+            if is_encrypted(password):
+                password = decrypt_str(password[len("enc:"):])
         return {
             "name": row["name"],
             "host": row["host"],
             "port": row["port"],
             "username": row["username"],
-            "password": row["password"],
+            "password": password,
             "type": row["ptype"],
         }
 
@@ -106,6 +124,8 @@ class ProxyManager:
 
         Returns:
             ``{'name','host','port','username','password','type'}``.
+            ``password`` is returned in plaintext (decrypted if stored
+            encrypted).
 
         Raises:
             ValueError: If ``name`` already exists, ``port`` is out of
@@ -120,6 +140,13 @@ class ProxyManager:
                 f"ptype must be one of {sorted(_PROXY_TYPES)}, got {ptype!r}"
             )
         name = name.strip()
+        if password is not None:
+            # Encrypt auth passwords at rest (lazy import: crypto lives in
+            # another package and must not be loaded at module import).
+            from src.security.crypto import encrypt_str, is_encrypted
+
+            if not is_encrypted(password):
+                password = "enc:" + encrypt_str(password)
         with self._lock, self._connect() as conn:
             if conn.execute(
                 "SELECT 1 FROM proxies WHERE name = ?", (name,)
@@ -139,6 +166,9 @@ class ProxyManager:
     def get(self, name) -> dict:
         """Return the proxy definition for ``name``.
 
+        ``password`` comes back in plaintext (decrypted if stored
+        encrypted).
+
         Raises:
             KeyError: If no proxy with ``name`` exists.
         """
@@ -151,7 +181,11 @@ class ProxyManager:
         return self._row_to_dict(row)
 
     def list(self) -> list:
-        """Return all stored proxy definitions, ordered by name."""
+        """Return all stored proxy definitions, ordered by name.
+
+        ``password`` values come back in plaintext (decrypted if stored
+        encrypted).
+        """
         with self._lock, self._connect() as conn:
             rows = conn.execute("SELECT * FROM proxies ORDER BY name").fetchall()
         return [self._row_to_dict(r) for r in rows]
