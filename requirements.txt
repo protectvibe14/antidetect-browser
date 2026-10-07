@@ -1,0 +1,4 @@
+# All browser/fingerprint code is vendored under vendor/ (no pip install needed for those).
+# Only generic tooling below:
+playwright>=1.40   # only needed if driving browsers outside the vendored camoufox API
+pytest>=8.0
