@@ -15,3 +15,7 @@ rich
 rich-click
 screeninfo
 ua-parser
+# GUI backend (src/gui/server.py)
+fastapi
+uvicorn
+python-multipart

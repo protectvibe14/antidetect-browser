@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AntiDetect — Profile Manager</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="ps-shell">
+    <!-- ================= Sidebar ================= -->
+    <aside class="ps-side">
+      <div class="ps-brand">
+        <div class="ps-logo"><span class="ps-logo-glow"></span><span class="ps-logo-mark">&#9670;</span></div>
+        <div>
+          <div class="ps-brand-name">AntiDetect</div>
+          <div class="ps-brand-sub">Profile Manager</div>
+        </div>
+      </div>
+
+      <nav class="ps-nav">
+        <button class="ps-navitem active"><span class="ps-nav-ic">&#9783;</span><span>Profiles</span></button>
+      </nav>
+
+      <div class="ps-folders">
+        <div class="ps-folders-h">Tags</div>
+        <div id="tag-list"></div>
+      </div>
+
+      <div id="conn-foot" class="ps-side-foot" title="Connection to the local backend">
+        <span class="ps-foot-dot"></span>
+        <span id="conn-label">Connecting&hellip;</span>
+        <span class="ps-foot-ver">v0.1.0</span>
+      </div>
+    </aside>
+
+    <!-- ================= Main ================= -->
+    <main class="ps-main">
+      <div class="ps-stats">
+        <div class="ps-stat">
+          <div class="ps-stat-ic">&#9783;</div>
+          <div><div class="ps-stat-val" id="stat-profiles">0</div><div class="ps-stat-label">Profiles</div></div>
+        </div>
+        <div class="ps-stat">
+          <div class="ps-stat-ic pulse" id="stat-running-ic">&#9679;</div>
+          <div><div class="ps-stat-val" id="stat-running">0</div><div class="ps-stat-label">Running</div></div>
+        </div>
+        <div class="ps-stat">
+          <div class="ps-stat-ic">&#8646;</div>
+          <div><div class="ps-stat-val" id="stat-proxies">0</div><div class="ps-stat-label">Proxies</div></div>
+        </div>
+        <div style="flex:1"></div>
+        <button class="ps-btn ghost" id="btn-bulk"><span class="ps-btn-ic">&#8681;</span> Bulk Import</button>
+        <button class="ps-btn primary" id="btn-new"><span class="ps-btn-ic">+</span> New Profile</button>
+      </div>
+
+      <div class="ps-toolbar">
+        <div class="ps-search">
+          <span class="ps-search-ic">&#8981;</span>
+          <input id="search" type="text" placeholder="Search profiles, tags&hellip;" autocomplete="off" aria-label="Search profiles">
+        </div>
+        <div class="ps-crumb" id="crumb"><span>&#128193;</span> <span id="crumb-tag">All profiles</span></div>
+        <div style="flex:1"></div>
+        <span id="refresh-note" class="ps-refresh-note"></span>
+      </div>
+
+      <div class="ps-scroll">
+        <div id="table-wrap">
+          <table class="ps-table">
+            <thead>
+              <tr>
+                <th>Status</th><th>Name</th><th>Client tag</th><th>OS</th>
+                <th>Proxy</th><th>Last used</th><th style="text-align:right">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="profiles-body">
+              <tr><td colspan="7"><div class="ps-empty">Loading profiles&hellip;</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- ================= New Profile modal ================= -->
+  <div id="modal-new" class="ps-overlay center" hidden>
+    <div class="ps-modal ps-pop">
+      <div class="ps-drawer-h">
+        <div><div class="ps-eyebrow">Create</div><div class="ps-drawer-title">New Profile</div></div>
+        <button class="ps-x" data-close aria-label="Close">&#10005;</button>
+      </div>
+      <form id="form-new" class="ps-form">
+        <div class="ps-field">
+          <label class="ps-flabel" for="new-name">Profile name</label>
+          <input class="ps-in" id="new-name" type="text" required placeholder="e.g. client-acme-01">
+        </div>
+        <div class="ps-row">
+          <div class="ps-field">
+            <label class="ps-flabel" for="new-os">Operating system</label>
+            <select class="ps-in" id="new-os" required>
+              <option value="windows">Windows</option>
+              <option value="macos">macOS</option>
+              <option value="linux">Linux</option>
+            </select>
+          </div>
+          <div class="ps-field">
+            <label class="ps-flabel" for="new-proxy">Proxy</label>
+            <select class="ps-in" id="new-proxy"><option value="">None (direct)</option></select>
+          </div>
+        </div>
+        <div class="ps-field">
+          <label class="ps-flabel" for="new-tag">Client tag <span class="ps-flabel-hint">(optional)</span></label>
+          <input class="ps-in" id="new-tag" type="text" placeholder="e.g. acme">
+        </div>
+        <div class="ps-modal-foot">
+          <button type="button" class="ps-btn ghost" data-close>Cancel</button>
+          <button type="submit" class="ps-btn primary">Create</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ================= Bulk Import modal ================= -->
+  <div id="modal-bulk" class="ps-overlay center" hidden>
+    <div class="ps-modal ps-pop">
+      <div class="ps-drawer-h">
+        <div><div class="ps-eyebrow">Create</div><div class="ps-drawer-title">Bulk Import</div></div>
+        <button class="ps-x" data-close aria-label="Close">&#10005;</button>
+      </div>
+      <form id="form-bulk" class="ps-form">
+        <div class="ps-field">
+          <label class="ps-flabel" for="bulk-file">CSV file</label>
+          <input class="ps-in" id="bulk-file" type="file" accept=".csv,text/csv" required>
+        </div>
+        <div class="ps-field">
+          <label class="ps-flabel" for="bulk-tag">Client tag <span class="ps-flabel-hint">(optional)</span></label>
+          <input class="ps-in" id="bulk-tag" type="text" placeholder="e.g. acme">
+        </div>
+        <div id="bulk-result" class="ps-bulk-result" hidden></div>
+        <div class="ps-modal-foot">
+          <button type="button" class="ps-btn ghost" data-close>Cancel</button>
+          <button type="submit" class="ps-btn primary">Import</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ================= Health modal ================= -->
+  <div id="modal-health" class="ps-overlay center" hidden>
+    <div class="ps-modal ps-modal-wide ps-pop">
+      <div class="ps-drawer-h">
+        <div><div class="ps-eyebrow">Profile health</div><div class="ps-drawer-title" id="health-title">Health</div></div>
+        <button class="ps-x" data-close aria-label="Close">&#10005;</button>
+      </div>
+      <div id="health-body" class="ps-health-body"><div class="ps-empty">Loading health&hellip;</div></div>
+      <div class="ps-modal-foot">
+        <button type="button" class="ps-btn ghost" data-close>Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toasts" class="ps-toasts" aria-live="polite"></div>
+
+  <script src="app.js" defer></script>
+</body>
+</html>

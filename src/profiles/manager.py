@@ -135,12 +135,25 @@ def _viewport_for(screen_width, screen_height):
     return {"width": screen_width, "height": min(height, screen_height)}
 
 
-def _generate_persona(name, os_name, proxy, overrides):
-    """Build a persona dict, preferring browserforge with a hardcoded fallback.
+def _generate_persona(name, os_name, proxy, overrides, generator="high_entropy"):
+    """Build a persona dict, preferring the requested generator.
 
+    :param generator: ``"high_entropy"`` uses
+        :func:`src.fingerprints.generator.generate_persona`;
+        ``"browserforge"`` uses the vendored browserforge generator (the
+        pre-Phase-3 path).  Either way, a hardcoded per-OS fallback applies
+        when generation raises.
     Returns a dict containing exactly the persona contract keys, overlaid with
     ``overrides`` (which win on any conflict).
     """
+    if generator == "high_entropy":
+        try:
+            from src.fingerprints.generator import generate_persona
+            persona = generate_persona(name, os=os_name, proxy=proxy)
+            persona.update(overrides)
+            return persona
+        except Exception:
+            pass  # fall through to the browserforge path below
     try:
         generator = FingerprintGenerator(
             browser=("firefox",), os=(os_name,), device="desktop"
@@ -293,7 +306,7 @@ class ProfileManager:
         return persona
 
     def create(self, name, os="windows", proxy=None, client_tag=None,
-               template=None, **overrides):
+               template=None, generator="high_entropy", **overrides):
         """Create and persist a new persona.
 
         :param name: unique profile name; must be a non-empty string.
@@ -302,6 +315,9 @@ class ProfileManager:
         :param client_tag: agency client label, stored in its own column.
         :param template: template name the profile was built from, stored in
             its own column.  Neither is duplicated inside ``fingerprint_json``.
+        :param generator: ``"high_entropy"`` (default) uses
+            :func:`src.fingerprints.generator.generate_persona`;
+            ``"browserforge"`` keeps the pre-Phase-3 browserforge path.
         :param overrides: extra fields merged into the persona (win).
         :return: the persona dict (including ``client_tag``/``template``).
         :raises ValueError: on duplicate name, empty name or unknown os.
@@ -314,7 +330,9 @@ class ProfileManager:
         # caller could not reach here with them inside overrides otherwise.
         overrides.pop("client_tag", None)
         overrides.pop("template", None)
-        persona = _generate_persona(name, os, proxy, overrides)
+        overrides.pop("generator", None)
+        persona = _generate_persona(name, os, proxy, overrides,
+                                    generator=generator)
         persona["client_tag"] = client_tag
         persona["template"] = template
         self._insert(persona)
