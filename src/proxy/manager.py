@@ -190,3 +190,50 @@ class ProxyManager:
             return True
         except Exception:
             return False
+
+    # -- Worker B: proxy geo-sync (additive) --------------------------
+    def assign_and_sync(self, profile_name, proxy_name):
+        """Assign a proxy to a profile and geo-sync the profile's persona.
+
+        Lazily imports :class:`ProfileManager` to avoid import cycles.
+
+        Steps:
+            1. Fetch the proxy dict via :meth:`get`.
+            2. Attach it to the profile via ``pm.update(profile_name,
+               proxy=proxy)``.
+            3. Run :meth:`GeoSync.sync_persona_to_ip` on the updated persona.
+            4. Persist any geo changes (timezone/locale/geolocation).
+
+        Args:
+            profile_name: name of an existing profile.
+            proxy_name: name of an existing proxy.
+
+        Returns:
+            ``{'profile', 'proxy', 'persona', 'note'}`` where ``persona``
+            is the synced persona dict and ``note`` is the geo-sync status
+            string from :meth:`GeoSync.sync_persona_to_ip`.
+
+        Raises:
+            KeyError: If no proxy named ``proxy_name`` or no profile named
+                ``profile_name`` exists. These are caller errors, so they
+                propagate (unlike best-effort network failures).
+        """
+        from src.profiles.manager import ProfileManager
+        from src.proxy.geosync import GeoSync
+
+        proxy = self.get(proxy_name)  # KeyError on unknown proxy
+        pm = ProfileManager()
+        persona = pm.update(profile_name, proxy=proxy)  # KeyError unknown profile
+        synced, note = GeoSync.sync_persona_to_ip(persona)
+        pm.update(
+            profile_name,
+            timezone=synced.get("timezone"),
+            locale=synced.get("locale"),
+            geolocation=synced.get("geolocation"),
+        )
+        return {
+            "profile": profile_name,
+            "proxy": proxy_name,
+            "persona": synced,
+            "note": note,
+        }

@@ -1,4 +1,4 @@
-"""Profile health checker: consistency validation + best-effort network probe."""
+"""Profile health checker: consistency validation + best-effort network/detection probes."""
 
 import src._vendor  # noqa: F401  (must stay first: keeps vendored deps importable)
 
@@ -10,6 +10,30 @@ _IPv4_RE = re.compile(r"\b(\d{1,3}(?:\.\d{1,3}){3})\b")
 _NETWORK_BUDGET_S = 25
 _GOTO_TIMEOUT_MS = 20000
 _IP_CHECK_URL = "https://browserleaks.com/ip"
+
+# Detection harness: third-party bot/fingerprint test sites. Each leg is
+# best-effort inside its own thread budget; parsing is heuristic (see
+# src/health/detectors.py) because these pages are JS-heavy and their
+# markup changes often.
+_DETECTION_BUDGET_S = 20
+_DETECTION_GOTO_TIMEOUT_MS = 15000
+_DETECTION_SITES = (
+    ("creepjs", "https://abrahamjuliot.github.io/creepjs/", "parse_creepjs"),
+    ("pixelscan", "https://pixelscan.net/", "parse_pixelscan"),
+)
+
+# verdict -> weight used in the detection part of the score.
+_VERDICT_WEIGHTS = {
+    "clean": 1.0,
+    "unknown": 0.5,
+    "suspicious": 0.25,
+    "bot": 0.0,
+}
+# Neutral detection part when no site produced a parseable verdict.
+_DETECTION_NEUTRAL = 15.0
+
+_SKIP_REASON = ("camoufox browser binary not installed; "
+                "run setup_browser.py first")
 
 
 def _extract_ipv4(text):
@@ -34,16 +58,30 @@ class HealthChecker:
     The consistency part always runs via the sibling ConsistencyValidator.
     The network part is best-effort: a headless launch + one page visit inside
     a hard overall timeout. Any failure there is recorded, never raised.
+    The detection part visits third-party bot/fingerprint test sites
+    (CreepJS, Pixelscan) in the same best-effort pattern and parses the
+    rendered pages heuristically; failures are recorded, never raised.
     """
 
     network_budget_s = _NETWORK_BUDGET_S
+    detection_budget_s = _DETECTION_BUDGET_S
 
     def check(self, persona):
         """Run all health checks for a persona dict.
 
-        Returns {'profile', 'consistency', 'network', 'score'} where
-        score is 0-100 (1 decimal): 100 * passed/total from consistency,
-        minus 10 when the network check did not succeed (floor 0).
+        Returns {'profile', 'consistency', 'network', 'detection', 'score'}.
+
+        Score formula (0-100, 1 decimal):
+            consistency_part = 60 * (passed / total consistency checks)
+            detection_part   = 30 * (average over attempted-and-parsed
+                               detection sites of: clean=1.0, unknown=0.5,
+                               suspicious=0.25, bot=0.0; sites skipped or
+                               errored are EXCLUDED from the average; if no
+                               site produced a parseable verdict,
+                               detection_part = 15.0 neutral)
+            network_part     = 10 if network status == 'ok' else 0
+            score = round(consistency_part + detection_part + network_part,
+                          1), floored at 0.
         """
         results = self._run_consistency(persona)
         total = len(results)
@@ -57,17 +95,36 @@ class HealthChecker:
                          if not (isinstance(r, dict) and r.get("passed"))],
         }
         network = self._run_network_check(persona)
-        score = (100.0 * passed / total) if total else 0.0
-        if network.get("status") != "ok":
-            score -= 10.0
-        score = round(max(0.0, score), 1)
+        detection = self._run_detection_check(persona)
+        score = self._compute_score(consistency, network, detection)
         name = persona.get("name") if isinstance(persona, dict) else None
         return {
             "profile": name,
             "consistency": consistency,
             "network": network,
+            "detection": detection,
             "score": score,
         }
+
+    @staticmethod
+    def _compute_score(consistency, network, detection):
+        """Score 0-100 (1 decimal) per the formula in check()'s docstring."""
+        total = consistency.get("total", 0) or 0
+        passed = consistency.get("passed", 0) or 0
+        consistency_part = 60.0 * passed / total if total else 0.0
+        weights = []
+        if isinstance(detection, dict):
+            for key in ("creepjs", "pixelscan"):
+                leg = detection.get(key)
+                if isinstance(leg, dict) and leg.get("status") == "ok":
+                    weight = _VERDICT_WEIGHTS.get(leg.get("verdict"))
+                    if weight is not None:
+                        weights.append(weight)
+        detection_part = (30.0 * sum(weights) / len(weights)
+                          if weights else _DETECTION_NEUTRAL)
+        network_part = 10.0 if network.get("status") == "ok" else 0.0
+        return round(max(0.0, consistency_part + detection_part
+                         + network_part), 1)
 
     def _run_consistency(self, persona):
         """Run ConsistencyValidator.validate; synthesize a failure if unavailable."""
@@ -116,6 +173,90 @@ class HealthChecker:
         return outcome.get("result",
                            {"status": "error",
                             "reason": "network check produced no result"})
+
+    def _run_detection_check(self, persona):
+        """Best-effort detection-site visits + heuristic parsing. Never raises.
+
+        Returns {'creepjs': {...}, 'pixelscan': {...}} where each leg is
+        {'status': 'ok'|'skipped'|'error', 'verdict': ..., 'signals': [...]}
+        on success or {'status': ..., 'reason': ...} otherwise.
+        """
+        legs = {}
+        try:
+            from src.browser.launcher import launch_profile, browser_binary_present
+        except Exception as exc:
+            reason = ("launcher unavailable: %s" % exc)[:200]
+            for name, _url, _parser in _DETECTION_SITES:
+                legs[name] = {"status": "skipped", "reason": reason}
+            return legs
+        try:
+            binary_ok = browser_binary_present()
+        except Exception as exc:
+            reason = ("binary check failed: %s" % exc)[:200]
+            for name, _url, _parser in _DETECTION_SITES:
+                legs[name] = {"status": "skipped", "reason": reason}
+            return legs
+        if not binary_ok:
+            for name, _url, _parser in _DETECTION_SITES:
+                legs[name] = {"status": "skipped", "reason": _SKIP_REASON}
+            return legs
+        for name, url, parser_name in _DETECTION_SITES:
+            legs[name] = self._run_detection_leg(
+                launch_profile, persona, url, parser_name)
+        return legs
+
+    def _run_detection_leg(self, launch_profile, persona, url, parser_name):
+        """Run one detection-site leg inside a hard thread budget. Never raises."""
+        outcome = {}
+        try:
+            from src.health.detectors import parse_creepjs, parse_pixelscan
+            parsers = {"parse_creepjs": parse_creepjs,
+                       "parse_pixelscan": parse_pixelscan}
+            parser = parsers[parser_name]
+        except Exception as exc:
+            return {"status": "error",
+                    "reason": ("detector unavailable: %s" % exc)[:200]}
+        worker = threading.Thread(
+            target=self._probe_detection_site,
+            args=(launch_profile, persona, url, parser, outcome),
+            daemon=True,
+        )
+        worker.start()
+        worker.join(timeout=self.detection_budget_s)
+        if worker.is_alive():
+            return {"status": "error",
+                    "reason": "detection check timed out after %ss"
+                              % self.detection_budget_s}
+        return outcome.get("result",
+                           {"status": "error",
+                            "reason": "detection check produced no result"})
+
+    @staticmethod
+    def _probe_detection_site(launch_profile, persona, url, parser, outcome):
+        """Worker body: launch headless, visit the site, parse content."""
+        browser = None
+        try:
+            browser = launch_profile(persona, headless=True)
+            page = browser.page
+            page.goto(url, timeout=_DETECTION_GOTO_TIMEOUT_MS)
+            html = page.content()
+            parsed = parser(html)
+            outcome["result"] = {"status": "ok"}
+            if isinstance(parsed, dict):
+                outcome["result"]["verdict"] = parsed.get("verdict", "unknown")
+                outcome["result"]["signals"] = parsed.get("signals", [])
+            else:
+                outcome["result"]["verdict"] = "unknown"
+                outcome["result"]["signals"] = []
+        except Exception as exc:
+            outcome["result"] = {"status": "error",
+                                 "reason": str(exc)[:200]}
+        finally:
+            if browser is not None:
+                try:
+                    browser.close()
+                except Exception:
+                    pass
 
     @staticmethod
     def _probe_browser(launch_profile, persona, outcome):
