@@ -28,7 +28,7 @@ class ActivityLog:
     """Thread-safe activity log backed by SQLite."""
 
     def __init__(self, db_path=None):
-        self._db = db_path or str(_paths.db_path("activity.db"))
+        self._db = db_path or str(_paths._under("activity.db"))
         self._lock = threading.Lock()
         self._init()
 
