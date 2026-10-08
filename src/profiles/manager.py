@@ -290,6 +290,12 @@ class ProfileManager:
                 conn.execute("ALTER TABLE profiles ADD COLUMN engine TEXT")
             if "group_name" not in existing:
                 conn.execute("ALTER TABLE profiles ADD COLUMN group_name TEXT")
+            if "deleted_at" not in existing:
+                conn.execute("ALTER TABLE profiles ADD COLUMN deleted_at REAL")
+            if "platform_acct" not in existing:
+                conn.execute("ALTER TABLE profiles ADD COLUMN platform_acct TEXT")
+            if "startup_urls" not in existing:
+                conn.execute("ALTER TABLE profiles ADD COLUMN startup_urls TEXT")
             # Legacy rows predate the engine column: they were all
             # camoufox profiles.
             conn.execute(
@@ -363,6 +369,17 @@ class ProfileManager:
                              else "camoufox")
         persona["group_name"] = (row["group_name"]
                                  if "group_name" in keys else None)
+        persona["platform_acct"] = (row["platform_acct"]
+                                    if "platform_acct" in keys else None)
+        if "startup_urls" in keys and row["startup_urls"]:
+            try:
+                persona["startup_urls"] = json.loads(row["startup_urls"])
+            except (ValueError, TypeError):
+                persona["startup_urls"] = []
+        else:
+            persona["startup_urls"] = []
+        persona["deleted_at"] = (row["deleted_at"]
+                                 if "deleted_at" in keys else None)
         return persona
 
     def create(self, name, os="windows", proxy=None, client_tag=None,
@@ -421,24 +438,78 @@ class ProfileManager:
             raise KeyError(name)
         return self._row_to_persona(row)
 
-    def list(self):
-        """Return all stored personas as a list of dicts."""
+    def list(self, include_deleted=False):
+        """Return all stored personas as a list of dicts.
+
+        Excludes soft-deleted (trashed) profiles unless
+        ``include_deleted`` is True.
+        """
         with self._connect() as conn:
-            rows = conn.execute(
-                "SELECT * FROM profiles ORDER BY name"
-            ).fetchall()
+            if include_deleted:
+                rows = conn.execute(
+                    "SELECT * FROM profiles ORDER BY name"
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM profiles WHERE deleted_at IS NULL"
+                    " ORDER BY name"
+                ).fetchall()
         return [self._row_to_persona(row) for row in rows]
 
-    def delete(self, name):
+    def delete(self, name, permanent=False):
         """Delete the profile ``name``.
+
+        By default this is a soft delete (moves to trash, ``deleted_at``
+        timestamp). Pass ``permanent=True`` to remove immediately.
 
         :return: True if a profile was deleted, False if not found.
         """
+        import time
+        with self._connect() as conn:
+            if permanent:
+                cursor = conn.execute(
+                    "DELETE FROM profiles WHERE name = ?", (name,)
+                )
+            else:
+                cursor = conn.execute(
+                    "UPDATE profiles SET deleted_at = ?"
+                    " WHERE name = ? AND deleted_at IS NULL",
+                    (time.time(), name),
+                )
+        return cursor.rowcount > 0
+
+    def restore(self, name):
+        """Restore a trashed profile.
+
+        :return: True if restored, False if not found in trash.
+        """
         with self._connect() as conn:
             cursor = conn.execute(
-                "DELETE FROM profiles WHERE name = ?", (name,)
+                "UPDATE profiles SET deleted_at = NULL"
+                " WHERE name = ? AND deleted_at IS NOT NULL",
+                (name,),
             )
         return cursor.rowcount > 0
+
+    def list_trash(self):
+        """Return trashed profiles (soft-deleted), newest first."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM profiles WHERE deleted_at IS NOT NULL"
+                " ORDER BY deleted_at DESC"
+            ).fetchall()
+        return [self._row_to_persona(row) for row in rows]
+
+    def purge_trash(self, older_than_days=30):
+        """Permanently delete trash older than N days. Returns count."""
+        import time
+        cutoff = time.time() - older_than_days * 86400
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "DELETE FROM profiles WHERE deleted_at IS NOT NULL"
+                " AND deleted_at < ?", (cutoff,),
+            )
+        return cursor.rowcount
 
     def update(self, name, **fields):
         """Merge ``fields`` into the stored persona and persist it.

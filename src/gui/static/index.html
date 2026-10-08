@@ -173,6 +173,7 @@
         <button class="ps-tab" data-tab="proxy">Proxy</button>
         <button class="ps-tab" data-tab="fingerprint">Fingerprint</button>
         <button class="ps-tab" data-tab="extensions">Extensions</button>
+        <button class="ps-tab" data-tab="platform">Platform</button>
         <button class="ps-tab" data-tab="overview">Overview</button>
       </div>
       <form id="form-edit" class="ps-form">
@@ -275,6 +276,25 @@
               <button type="submit" class="ps-btn primary sm">Upload</button>
             </div>
           </form>
+        </div>
+        <div class="ps-tabpane" data-pane="platform">
+          <div class="ps-field">
+            <label class="ps-flabel" for="edit-platform-acct">Platform account</label>
+            <select class="ps-in" id="edit-platform-acct">
+              <option value="">None</option>
+              <option value="facebook">Facebook</option>
+              <option value="google">Google</option>
+              <option value="tiktok">TikTok</option>
+              <option value="instagram">Instagram</option>
+              <option value="twitter">Twitter/X</option>
+              <option value="amazon">Amazon</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div class="ps-field">
+            <label class="ps-flabel" for="edit-startup-urls">Startup URLs <span class="ps-flabel-hint">(one per line, opened on launch)</span></label>
+            <textarea class="ps-in" id="edit-startup-urls" rows="4" placeholder="https://example.com&#10;https://example.com/login"></textarea>
+          </div>
         </div>
         <div class="ps-tabpane" data-pane="overview">
           <div id="edit-overview" class="ps-kv"></div>

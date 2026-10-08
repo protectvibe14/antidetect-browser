@@ -307,6 +307,8 @@ class ProfileUpdate(BaseModel):
     hardware_concurrency: int | None = None
     device_memory: int | None = None
     regenerate_fingerprint: bool = False
+    platform_acct: str | None = None
+    startup_urls: list | None = None
 
 
 class SyncStart(BaseModel):
@@ -721,6 +723,19 @@ def create_app() -> FastAPI:
             persona = _profile_manager.update(name, **fields)
         except (KeyError, ValueError) as exc:
             raise HTTPException(400, str(exc))
+        # platform_acct and startup_urls are top-level columns, not
+        # fingerprint fields — update them directly.
+        if body.platform_acct is not None or body.startup_urls is not None:
+            import json as _json
+            with _profile_manager._connect() as _conn:
+                if body.platform_acct is not None:
+                    _conn.execute(
+                        "UPDATE profiles SET platform_acct = ? WHERE name = ?",
+                        (body.platform_acct or None, name))
+                if body.startup_urls is not None:
+                    _conn.execute(
+                        "UPDATE profiles SET startup_urls = ? WHERE name = ?",
+                        (_json.dumps(body.startup_urls), name))
         return {"profile": _profile_view(persona)}
 
     @app.delete("/api/profiles/{name}")
@@ -1291,6 +1306,35 @@ def create_app() -> FastAPI:
         _activity_log.record(_actor(request), "profile.import",
                              detail="%d created" % len(created))
         return {"created": created, "skipped": skipped}
+
+    # -- trash (soft delete) ------------------------------------------------
+    @app.get("/api/trash")
+    def list_trash():
+        """List trashed (soft-deleted) profiles."""
+        return {"trash": [_profile_view(p) for p in
+                          _profile_manager.list_trash()]}
+
+    @app.post("/api/trash/{name}/restore")
+    def restore_profile(request: Request, name: str):
+        """Restore a trashed profile."""
+        if not _profile_manager.restore(name):
+            raise HTTPException(404, "no trashed profile '%s'" % name)
+        _activity_log.record(_actor(request), "profile.restore", name)
+        return {"restored": True}
+
+    @app.delete("/api/trash/{name}")
+    def purge_profile(request: Request, name: str):
+        """Permanently delete a trashed profile."""
+        if not _profile_manager.delete(name, permanent=True):
+            raise HTTPException(404, "no trashed profile '%s'" % name)
+        _activity_log.record(_actor(request), "profile.purge", name)
+        return {"deleted": True}
+
+    @app.post("/api/trash/purge")
+    def purge_old_trash(request: Request):
+        """Permanently delete trash older than 30 days."""
+        count = _profile_manager.purge_trash(older_than_days=30)
+        return {"purged": count}
 
     # -- migration: import profiles from other anti-detect browsers -------
     @app.post("/api/migrate/adspower")

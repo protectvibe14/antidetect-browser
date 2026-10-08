@@ -1094,6 +1094,9 @@ function fillEditForm(prof) {
   $("edit-locale").value = fp.locale || "";
   $("edit-ua").value = fp.user_agent || "";
   $("edit-platform").value = fp.platform || "";
+  // platform tab
+  $("edit-platform-acct").value = prof.platform_acct || "";
+  $("edit-startup-urls").value = (prof.startup_urls || []).join("\n");
   $("edit-hw").value = fp.hardware_concurrency ?? "";
   $("edit-mem").value = fp.device_memory ?? "";
   $("edit-sw").value = fp.screen_width ?? "";
@@ -1139,6 +1142,9 @@ async function submitEdit(e) {
     device_memory: num("edit-mem"),
     screen_width: num("edit-sw"),
     screen_height: num("edit-sh"),
+    platform_acct: $("edit-platform-acct").value || null,
+    startup_urls: $("edit-startup-urls").value.split("\n")
+      .map(s => s.trim()).filter(Boolean),
   };
   try {
     await api.updateProfile(name, payload);
