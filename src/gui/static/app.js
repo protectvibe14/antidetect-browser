@@ -150,6 +150,7 @@ const state = {
   group: "",            // "" = All groups; "__ungrouped__" = no group; else group name
   proxiesLoaded: false,
   syncSessionId: null,  // active sync session, if any
+  selected: new Set(),  // bulk-selected profile names
 };
 
 /* ---------------- DOM helpers ---------------- */
@@ -267,7 +268,7 @@ function renderTable() {
       ? `<div class="ps-empty"><div>No profiles yet.</div>
          <button class="ps-btn primary sm" id="empty-new">+ Create one</button></div>`
       : `<div class="ps-empty"><div>No profiles match your search or tag filter.</div></div>`;
-    body.innerHTML = `<tr><td colspan="8">${empty}</td></tr>`;
+    body.innerHTML = `<tr><td colspan="9">${empty}</td></tr>`;
     const b = $("empty-new");
     if (b) b.addEventListener("click", () => openModal("modal-new"));
     return;
@@ -292,6 +293,7 @@ function renderTable() {
       ? `<span class="ps-tag group">${esc(p.group_name)}</span>`
       : `<span class="ps-tag none">&mdash;</span>`;
     return `<tr data-name="${name}">
+      <td><input type="checkbox" class="row-select" data-name="${name}"${state.selected.has(name) ? " checked" : ""}></td>
       <td>${statusCell(p)}</td>
       <td><div class="ps-name-row"><span class="ps-name">${name}</span></div></td>
       <td>${group}</td>
@@ -314,7 +316,114 @@ function renderTable() {
     tr.querySelectorAll("[data-act]").forEach(btn => {
       btn.addEventListener("click", () => onAction(name, btn.dataset.act));
     });
+    const cb = tr.querySelector(".row-select");
+    if (cb) cb.addEventListener("change", () => {
+      if (cb.checked) state.selected.add(name);
+      else state.selected.delete(name);
+      renderBulkBar();
+    });
   });
+  renderBulkBar();
+}
+
+/* ---------------- Bulk selection ---------------- */
+function renderBulkBar() {
+  const bar = $("bulk-bar");
+  const n = state.selected.size;
+  bar.hidden = n === 0;
+  $("bulk-count").textContent = `${n} selected`;
+  const sa = $("select-all");
+  if (sa) {
+    const visible = state.profiles.filter(matches).map(p => p.name);
+    sa.checked = visible.length > 0 && visible.every(v => state.selected.has(v));
+    sa.indeterminate = !sa.checked && visible.some(v => state.selected.has(v));
+  }
+}
+
+function selectedNames() {
+  // Only return names that still exist.
+  const existing = new Set(state.profiles.map(p => p.name));
+  return [...state.selected].filter(n => existing.has(n));
+}
+
+async function bulkLaunch() {
+  const names = selectedNames();
+  let ok = 0;
+  for (const name of names) {
+    try { await api.launch(name); ok++; }
+    catch (e) { /* per-profile errors shown via status */ }
+  }
+  toast(`Launched ${ok}/${names.length}`, ok === names.length ? "success" : "info");
+  await refreshProfiles();
+}
+
+async function bulkStop() {
+  const names = selectedNames();
+  let ok = 0;
+  for (const name of names) {
+    try { await api.stop(name); ok++; }
+    catch (e) { /* ignore */ }
+  }
+  toast(`Stopped ${ok}/${names.length}`, "success");
+  await refreshProfiles();
+}
+
+async function bulkDelete() {
+  const names = selectedNames();
+  if (names.length === 0) return;
+  if (!confirm(`Delete ${names.length} profiles? This cannot be undone.`)) return;
+  let ok = 0, failed = [];
+  for (const name of names) {
+    try { await api.deleteProfile(name); ok++; state.selected.delete(name); }
+    catch (e) { failed.push(name); }
+  }
+  if (failed.length) toast(`Deleted ${ok}, failed: ${failed.join(", ")}`, "error");
+  else toast(`Deleted ${ok} profiles`, "success");
+  await refreshProfiles();
+  renderBulkBar();
+}
+
+function openBulkEdit() {
+  const names = selectedNames();
+  if (names.length === 0) return;
+  $("bulk-edit-count").textContent = `${names.length} profiles selected`;
+  // Populate group + proxy dropdowns.
+  const gsel = $("bulk-group");
+  gsel.innerHTML = `<option value="__keep__">Keep unchanged</option>
+    <option value="">Ungrouped</option>` +
+    state.groups.map(g => `<option value="${esc(g.name)}">${esc(g.name)}</option>`).join("");
+  loadProxyOptions("bulk-proxy", true);
+  openModal("modal-bulk-edit");
+}
+
+async function submitBulkEdit(e) {
+  e.preventDefault();
+  const names = selectedNames();
+  const groupVal = $("bulk-group").value;
+  const proxyVal = $("bulk-proxy").value;
+  const tagVal = $("bulk-tag").value.trim();
+  const changeGroup = groupVal !== "__keep__";
+  const changeProxy = proxyVal !== "__keep__";
+  const changeTag = tagVal !== "";
+  if (!changeGroup && !changeProxy && !changeTag) {
+    toast("Nothing to change", "error");
+    return;
+  }
+  let ok = 0, failed = 0;
+  for (const name of names) {
+    try {
+      const payload = {};
+      if (changeTag) payload.client_tag = tagVal;
+      if (changeProxy) payload.proxy_name = proxyVal;
+      if (changeGroup) payload.group_name = groupVal || null;
+      await api.updateProfile(name, payload);
+      ok++;
+    } catch (e) { failed++; }
+  }
+  toast(`Updated ${ok}/${names.length}${failed ? ` (${failed} failed)` : ""}`,
+    failed ? "info" : "success");
+  $("modal-bulk-edit").hidden = true;
+  await refreshProfiles();
 }
 
 function renderAll() {
@@ -429,14 +538,16 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") document.querySelectorAll(".ps-overlay").forEach(bd => bd.hidden = true);
 });
 
-async function loadProxyOptions(selId) {
+async function loadProxyOptions(selId, keepOption) {
   const sel = $(selId || "new-proxy");
   try {
     state.proxies = await api.listProxies();
     state.proxiesLoaded = true;
   } catch { /* keep whatever we had; proxies optional */ }
   const cur = sel.value;
-  sel.innerHTML = `<option value="">None (direct)</option>` + state.proxies.map(p =>
+  sel.innerHTML =
+    (keepOption ? `<option value="__keep__">Keep unchanged</option>` : "") +
+    `<option value="">None (direct)</option>` + state.proxies.map(p =>
     `<option value="${esc(p.name)}">${esc(p.name)} (${esc(p.type)}://${esc(p.host)}:${esc(p.port)})</option>`
   ).join("");
   if ([...sel.options].some(o => o.value === cur)) sel.value = cur;
@@ -1289,4 +1400,22 @@ $("btn-rpa-create").addEventListener("click", async () => {
   if (pf) pf.addEventListener("submit", onProxyCreate);
   const pbf = $("form-proxy-bulk");
   if (pbf) pbf.addEventListener("submit", onProxyBulk);
+  // Bulk selection bar.
+  const sa = $("select-all");
+  if (sa) sa.addEventListener("change", () => {
+    const visible = state.profiles.filter(matches).map(p => p.name);
+    if (sa.checked) visible.forEach(n => state.selected.add(n));
+    else visible.forEach(n => state.selected.delete(n));
+    renderTable();
+  });
+  $("bulk-launch").addEventListener("click", bulkLaunch);
+  $("bulk-stop").addEventListener("click", bulkStop);
+  $("bulk-edit").addEventListener("click", openBulkEdit);
+  $("bulk-delete").addEventListener("click", bulkDelete);
+  $("bulk-clear").addEventListener("click", () => {
+    state.selected.clear();
+    renderTable();
+  });
+  const bef = $("form-bulk-edit");
+  if (bef) bef.addEventListener("submit", submitBulkEdit);
 })();

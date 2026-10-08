@@ -211,6 +211,8 @@ button { font-family: inherit; }
 .px-status.ok { color: #34c759; }
 .px-status.bad { color: #ff453a; }
 .ps-bulk-result { margin: 8px 0; padding: 8px 10px; border: 1px solid var(--line-soft); border-radius: 8px; font-size: 12px; }
+.ps-bulk-bar { display: flex; align-items: center; gap: 8px; padding: 6px 12px; background: var(--bg-soft); border: 1px solid var(--line-soft); border-radius: 10px; }
+.ps-bulk-bar[hidden] { display: none; }
 .ps-os { font-size: 11px; font-weight: 600; color: var(--lilac); background: var(--violet-dim); padding: 3px 9px; border-radius: 6px; text-transform: capitalize; }
 .ps-proxy { display: flex; align-items: center; gap: 6px; font-size: 12px; font-family: var(--font-mono); }
 .ps-proxy .ps-proxy-ic { color: var(--mint); }

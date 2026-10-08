@@ -81,6 +81,14 @@
         <button class="ps-btn ghost sm" id="btn-groups" title="Manage groups">&#128193; Groups</button>
         <div class="ps-crumb" id="crumb"><span>&#128193;</span> <span id="crumb-tag">All profiles</span></div>
         <div style="flex:1"></div>
+        <div id="bulk-bar" class="ps-bulk-bar" hidden>
+          <span id="bulk-count" class="dim">0 selected</span>
+          <button class="ps-btn primary sm" id="bulk-launch">&#9654; Launch</button>
+          <button class="ps-btn ghost sm" id="bulk-stop">&#9632; Stop</button>
+          <button class="ps-btn ghost sm" id="bulk-edit">&#9998; Edit</button>
+          <button class="ps-btn danger sm" id="bulk-delete">&#10005; Delete</button>
+          <button class="ps-btn ghost sm" id="bulk-clear">Clear</button>
+        </div>
         <span id="refresh-note" class="ps-refresh-note"></span>
       </div>
 
@@ -89,12 +97,13 @@
           <table class="ps-table">
             <thead>
               <tr>
+                <th><input type="checkbox" id="select-all" title="Select all"></th>
                 <th>Status</th><th>Name</th><th>Group</th><th>Client tag</th><th>OS</th>
                 <th>Proxy</th><th>Last used</th><th style="text-align:right">Actions</th>
               </tr>
             </thead>
             <tbody id="profiles-body">
-              <tr><td colspan="8"><div class="ps-empty">Loading profiles&hellip;</div></td></tr>
+              <tr><td colspan="9"><div class="ps-empty">Loading profiles&hellip;</div></td></tr>
             </tbody>
           </table>
         </div>
@@ -434,6 +443,35 @@
           </form>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- ================= Bulk edit modal ================= -->
+  <div id="modal-bulk-edit" class="ps-overlay center" hidden>
+    <div class="ps-modal ps-pop">
+      <div class="ps-drawer-h">
+        <div><div class="ps-eyebrow">Bulk action</div><div class="ps-drawer-title">Edit profiles</div></div>
+        <button class="ps-x" data-close aria-label="Close">&#10005;</button>
+      </div>
+      <form id="form-bulk-edit" class="ps-form">
+        <p class="ps-hint" id="bulk-edit-count">0 profiles selected</p>
+        <div class="ps-field">
+          <label class="ps-flabel" for="bulk-group">Group</label>
+          <select class="ps-in" id="bulk-group"></select>
+        </div>
+        <div class="ps-field">
+          <label class="ps-flabel" for="bulk-proxy">Proxy</label>
+          <select class="ps-in" id="bulk-proxy"></select>
+        </div>
+        <div class="ps-field">
+          <label class="ps-flabel" for="bulk-tag">Client tag <span class="ps-flabel-hint">(leave empty to keep)</span></label>
+          <input class="ps-in" id="bulk-tag" type="text" placeholder="Keep unchanged">
+        </div>
+        <div class="ps-modal-foot">
+          <button type="button" class="ps-btn ghost" data-close>Cancel</button>
+          <button type="submit" class="ps-btn primary">Apply to selected</button>
+        </div>
+      </form>
     </div>
   </div>
 
