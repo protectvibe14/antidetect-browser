@@ -20,3 +20,8 @@ ua-parser
 fastapi
 uvicorn
 python-multipart
+zstandard
+indexed_zstd
+click
+openpyxl
+pydantic
