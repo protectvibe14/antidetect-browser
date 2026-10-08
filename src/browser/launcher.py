@@ -60,6 +60,38 @@ def _profile_root() -> str:
     """Return the per-profile user-data root dir."""
     return _paths.profiles_dir()
 
+
+def _clear_stale_locks(user_data_dir: str) -> None:
+    """Remove stale Firefox profile lock files left by crashed/killed instances.
+
+    When a browser process dies without cleaning up (kill, crash, force-stop),
+    ``parent.lock`` remains and the next launch exits immediately with code 0.
+    Only removes the lock when no camoufox/firefox process is currently running
+    to avoid corrupting a live profile.
+    """
+    lock_path = os.path.join(user_data_dir, "parent.lock")
+    if not os.path.exists(lock_path):
+        return
+    # Check for any live browser process before touching the lock.
+    try:
+        if os.name == "nt":
+            out = os.popen('tasklist /FI "IMAGENAME eq camoufox.exe" 2>nul').read()
+            live = "camoufox.exe" in out.lower()
+        else:
+            out = os.popen('pgrep -f "camoufox" 2>/dev/null').read()
+            live = bool(out.strip())
+    except Exception:
+        live = True  # be conservative: don't touch the lock if unsure
+    if live:
+        return
+    for name in ("parent.lock", "lock"):
+        p = os.path.join(user_data_dir, name)
+        try:
+            if os.path.islink(p) or os.path.isfile(p):
+                os.remove(p)
+        except OSError:
+            pass
+
 # persona['os'] -> camoufox `os` kwarg value
 _OS_MAP = {
     "windows": "windows",
@@ -358,6 +390,7 @@ def launch_profile(persona: dict, headless: bool = False) -> LaunchedProfile:
     """
     kwargs = build_launch_kwargs(persona, headless=headless)
     os.makedirs(kwargs["user_data_dir"], exist_ok=True)
+    _clear_stale_locks(kwargs["user_data_dir"])
 
     camoufox = Camoufox(**kwargs)
     browser = camoufox.__enter__()
