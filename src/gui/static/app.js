@@ -635,8 +635,8 @@ function fillEditForm(prof) {
     ["Client tag", prof.client_tag || ""],
     ["Last used", prof.last_used || "never"],
   ];
-  $("edit-overview").innerHTML = "<dl class=\"ps-kv\">" + rows.map(([k, v]) =>
-    `<dt>${esc(k)}</dt><dd>${esc(v == null || v === "" ? "\u2014" : String(v))}</dd>`).join("") + "</dl>";
+  $("edit-overview").innerHTML = '<div class="ps-kv">' + rows.map(([k, v]) =>
+    `<div class="ps-kv-row"><div class="ps-kv-k">${esc(k)}</div><div class="ps-kv-v">${esc(v == null || v === "" ? "\u2014" : String(v))}</div></div>`).join("") + "</div>";
 }
 
 async function submitEdit(e) {

@@ -333,7 +333,9 @@ select.ps-in { cursor: pointer; }
 .ps-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
 .ps-tabpane { display: none; padding-top: 4px; }
 .ps-tabpane.active { display: block; }
-.ps-kv { display: grid; grid-template-columns: 170px 1fr; gap: 6px 12px; font-size: 13px; }
-.ps-kv dt { color: var(--muted); font-weight: 600; }
-.ps-kv dd { margin: 0; word-break: break-all; font-family: ui-monospace, monospace; font-size: 12px; }
+.ps-kv { margin: 0; padding: 0; font-size: 13px; }
+.ps-kv-row { display: flex; gap: 14px; padding: 5px 0; border-bottom: 1px solid var(--line); }
+.ps-kv-row:last-child { border-bottom: none; }
+.ps-kv-k { flex: 0 0 150px; color: var(--muted); font-weight: 600; }
+.ps-kv-v { flex: 1; min-width: 0; overflow-wrap: anywhere; font-family: ui-monospace, monospace; font-size: 12px; line-height: 1.5; }
 .ps-hint { font-size: 12px; color: var(--muted); margin: 6px 0 0; }
