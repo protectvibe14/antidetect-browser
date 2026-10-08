@@ -15,14 +15,18 @@ The ``profiles`` table is:
     fingerprint_json TEXT    -- the persona dict serialized as JSON
     client_tag TEXT          -- agency client label (added via migration)
     template TEXT            -- template name the profile was built from
+    engine TEXT              -- browser engine: 'camoufox' (default) or
+                             -- 'patchright' (added via migration)
 
-``name``, ``os``, ``timezone``, ``locale``, ``client_tag`` and ``template``
+``name``, ``os``, ``timezone``, ``locale``, ``client_tag``, ``template``
+and ``engine``
 exist as real columns so personas are queryable by those attributes without
-parsing JSON.  Everything else lives inside ``fingerprint_json`` (the two
+parsing JSON.  Everything else lives inside ``fingerprint_json`` (the three
 meta keys are deliberately kept OUT of the JSON blob to avoid duplication).
 ``get()``/``list()`` rebuild the full persona dict from ``fingerprint_json``
-(overlaid with the authoritative ``name`` column, plus ``client_tag`` and
-``template`` restored from their columns), so the returned dict always
+(overlaid with the authoritative ``name`` column, plus ``client_tag``,
+``template`` and ``engine`` restored from their columns), so the returned
+dict always
 contains every contract key.
 """
 
@@ -39,6 +43,13 @@ from browserforge.fingerprints import FingerprintGenerator
 from src import paths as _paths
 
 _VALID_OS = ("windows", "macos", "linux")
+
+#: Browser engines a profile may use. ``'camoufox'`` (Firefox-based) is
+#: the default; ``'patchright'`` selects the Chromium engine.
+_VALID_ENGINES = ("camoufox", "patchright")
+
+#: profile engine value -> persona generator engine family.
+_ENGINE_GENERATOR_MAP = {"camoufox": "firefox", "patchright": "chromium"}
 
 _DEFAULT_TIMEZONES = {
     "windows": "America/New_York",
@@ -116,7 +127,7 @@ _FALLBACK_FINGERPRINTS = {
 
 # Persona keys that live in dedicated DB columns instead of fingerprint_json,
 # so they are never duplicated inside the JSON blob.
-_META_KEYS = ("client_tag", "template")
+_META_KEYS = ("client_tag", "template", "engine")
 
 # Sentinel distinguishing "field not passed" from "field passed as None"
 # in update().
@@ -140,7 +151,8 @@ def _viewport_for(screen_width, screen_height):
     return {"width": screen_width, "height": min(height, screen_height)}
 
 
-def _generate_persona(name, os_name, proxy, overrides, generator="high_entropy"):
+def _generate_persona(name, os_name, proxy, overrides, generator="high_entropy",
+                      engine="camoufox"):
     """Build a persona dict, preferring the requested generator.
 
     :param generator: ``"high_entropy"`` uses
@@ -148,13 +160,20 @@ def _generate_persona(name, os_name, proxy, overrides, generator="high_entropy")
         ``"browserforge"`` uses the vendored browserforge generator (the
         pre-Phase-3 path).  Either way, a hardcoded per-OS fallback applies
         when generation raises.
+    :param engine: ``"camoufox"`` (default) or ``"patchright"``; selects
+        the persona generator's UA family (``"firefox"`` vs
+        ``"chromium"``). The legacy browserforge/hardcoded fallbacks only
+        produce Firefox UAs, so for ``"patchright"`` their UA is replaced
+        with a generated Chrome UA.
     Returns a dict containing exactly the persona contract keys, overlaid with
     ``overrides`` (which win on any conflict).
     """
+    gen_engine = _ENGINE_GENERATOR_MAP.get(engine, "firefox")
     if generator == "high_entropy":
         try:
             from src.fingerprints.generator import generate_persona
-            persona = generate_persona(name, os=os_name, proxy=proxy)
+            persona = generate_persona(name, os=os_name, proxy=proxy,
+                                       engine=gen_engine)
             persona.update(overrides)
             return persona
         except Exception:
@@ -212,6 +231,11 @@ def _generate_persona(name, os_name, proxy, overrides, generator="high_entropy")
             "proxy": proxy,
             "canvas_seed": secrets.token_hex(8),
         }
+    if engine == "patchright":
+        # The browserforge/hardcoded fallbacks only know Firefox UAs; a
+        # patchright profile must never ship one.
+        from src.fingerprints.generator import chrome_user_agent
+        persona["user_agent"] = chrome_user_agent(os_name)
     persona.update(overrides)
     return persona
 
@@ -238,8 +262,10 @@ class ProfileManager:
     def _init_db(self):
         """Create the ``profiles`` table if it does not exist.
 
-        Also migrates databases created before the ``client_tag``/``template``
-        columns existed: any missing column is added via ``ALTER TABLE``.
+        Also migrates databases created before the ``client_tag``/
+        ``template``/``engine`` columns existed: any missing column is
+        added via ``ALTER TABLE``, and pre-existing rows get
+        ``engine='camoufox'`` (the historical default).
         """
         with self._connect() as conn:
             conn.execute(
@@ -260,12 +286,21 @@ class ProfileManager:
                 conn.execute("ALTER TABLE profiles ADD COLUMN client_tag TEXT")
             if "template" not in existing:
                 conn.execute("ALTER TABLE profiles ADD COLUMN template TEXT")
+            if "engine" not in existing:
+                conn.execute("ALTER TABLE profiles ADD COLUMN engine TEXT")
+            # Legacy rows predate the engine column: they were all
+            # camoufox profiles.
+            conn.execute(
+                "UPDATE profiles SET engine = 'camoufox' "
+                "WHERE engine IS NULL OR engine = ''"
+            )
 
     def _insert(self, persona):
         """Persist a persona; raise ValueError if the name already exists.
 
-        ``client_tag``/``template`` are stored in their own columns and are
-        stripped from ``fingerprint_json`` so the data is not duplicated.
+        ``client_tag``/``template``/``engine`` are stored in their own
+        columns and are stripped from ``fingerprint_json`` so the data is
+        not duplicated.
         """
         clean = {k: v for k, v in persona.items() if k not in _META_KEYS}
         row = {
@@ -278,6 +313,7 @@ class ProfileManager:
             "fingerprint_json": json.dumps(clean),
             "client_tag": persona.get("client_tag"),
             "template": persona.get("template"),
+            "engine": persona.get("engine") or "camoufox",
         }
         try:
             with self._connect() as conn:
@@ -285,10 +321,10 @@ class ProfileManager:
                     """
                     INSERT INTO profiles
                         (name, os, timezone, locale, created_at,
-                         fingerprint_json, client_tag, template)
+                         fingerprint_json, client_tag, template, engine)
                     VALUES
                         (:name, :os, :timezone, :locale, :created_at,
-                         :fingerprint_json, :client_tag, :template)
+                         :fingerprint_json, :client_tag, :template, :engine)
                     """,
                     row,
                 )
@@ -301,17 +337,22 @@ class ProfileManager:
         """Rebuild the full persona dict from a database row."""
         persona = json.loads(row["fingerprint_json"])
         persona["name"] = row["name"]  # PK is authoritative
-        # Columns are authoritative for meta keys; fall back to None when the
-        # row predates the migration (defensive: _init_db always migrates).
+        # Columns are authoritative for meta keys; fall back to defaults
+        # when the row predates the migration (defensive: _init_db always
+        # migrates, and backfills engine='camoufox').
         keys = row.keys()
         persona["client_tag"] = (row["client_tag"]
                                  if "client_tag" in keys else None)
         persona["template"] = (row["template"]
                                if "template" in keys else None)
+        persona["engine"] = (row["engine"]
+                             if "engine" in keys and row["engine"]
+                             else "camoufox")
         return persona
 
     def create(self, name, os="windows", proxy=None, client_tag=None,
-               template=None, generator="high_entropy", **overrides):
+               template=None, generator="high_entropy", engine="camoufox",
+               **overrides):
         """Create and persist a new persona.
 
         :param name: unique profile name; must be a non-empty string.
@@ -323,23 +364,32 @@ class ProfileManager:
         :param generator: ``"high_entropy"`` (default) uses
             :func:`src.fingerprints.generator.generate_persona`;
             ``"browserforge"`` keeps the pre-Phase-3 browserforge path.
+        :param engine: ``"camoufox"`` (default) or ``"patchright"``; stored
+            in its own column and selects the persona UA family
+            (Firefox vs Chromium).
         :param overrides: extra fields merged into the persona (win).
-        :return: the persona dict (including ``client_tag``/``template``).
-        :raises ValueError: on duplicate name, empty name or unknown os.
+        :return: the persona dict (including ``client_tag``/``template``/
+            ``engine``).
+        :raises ValueError: on duplicate name, empty name, unknown os or
+            unknown engine.
         """
         if not isinstance(name, str) or not name:
             raise ValueError("name must be a non-empty string")
         if os not in _VALID_OS:
             raise ValueError("os must be one of %s" % (_VALID_OS,))
+        if engine not in _VALID_ENGINES:
+            raise ValueError("engine must be one of %s" % (_VALID_ENGINES,))
         # Belt and braces: the named params above already bind these, but a
         # caller could not reach here with them inside overrides otherwise.
         overrides.pop("client_tag", None)
         overrides.pop("template", None)
         overrides.pop("generator", None)
+        overrides.pop("engine", None)
         persona = _generate_persona(name, os, proxy, overrides,
-                                    generator=generator)
+                                    generator=generator, engine=engine)
         persona["client_tag"] = client_tag
         persona["template"] = template
+        persona["engine"] = engine
         self._insert(persona)
         return persona
 
@@ -381,21 +431,28 @@ class ProfileManager:
         The ``name`` primary key cannot be changed: attempting to pass
         ``name=...`` raises ``TypeError`` (duplicate argument binding), which
         guarantees the stored name always matches the row key.  Fields may
-        also introduce new keys.  ``client_tag``/``template`` are stored in
-        their dedicated columns (kept out of ``fingerprint_json``); every
+        also introduce new keys.  ``client_tag``/``template``/``engine`` are
+        stored in their dedicated columns (kept out of
+        ``fingerprint_json``); every
         other field lands in the JSON blob.
 
         :return: the updated persona dict.
         :raises KeyError: if no profile with ``name`` exists.
+        :raises ValueError: on an unknown ``engine`` value.
         """
         client_tag = fields.pop("client_tag", _UNSET)
         template = fields.pop("template", _UNSET)
+        engine = fields.pop("engine", _UNSET)
+        if engine is not _UNSET and engine not in _VALID_ENGINES:
+            raise ValueError("engine must be one of %s" % (_VALID_ENGINES,))
         persona = self.get(name)  # raises KeyError when missing
         persona.update(fields)
         if client_tag is not _UNSET:
             persona["client_tag"] = client_tag
         if template is not _UNSET:
             persona["template"] = template
+        if engine is not _UNSET:
+            persona["engine"] = engine
         clean = {k: v for k, v in persona.items() if k not in _META_KEYS}
         set_clause = ("os = :os, timezone = :timezone, locale = :locale, "
                       "fingerprint_json = :fingerprint_json")
@@ -412,6 +469,9 @@ class ProfileManager:
         if template is not _UNSET:
             set_clause += ", template = :template"
             params["template"] = template
+        if engine is not _UNSET:
+            set_clause += ", engine = :engine"
+            params["engine"] = engine
         with self._connect() as conn:
             conn.execute(
                 "UPDATE profiles SET %s WHERE name = :name" % set_clause,
@@ -424,8 +484,9 @@ class ProfileManager:
 
         :param items: list of dicts, each of the form
             ``{'name': ..., 'os': ..., 'proxy': ..., 'client_tag': ...,
-            'template': ..., **overrides}``.  Only ``name`` is required;
-            ``os`` defaults to ``'windows'`` and the rest default to None.
+            'template': ..., 'engine': ..., **overrides}``.  Only ``name`` is
+            required; ``os`` defaults to ``'windows'``, ``engine`` to
+            ``'camoufox'`` and the rest default to None.
         :return: ``{'created': int, 'skipped': list, 'errors': list}`` where
             ``skipped`` holds names that already existed (duplicates do not
             raise) and ``errors`` holds ``{'name': ..., 'error': str}`` dicts
@@ -443,6 +504,7 @@ class ProfileManager:
                     proxy=item.pop("proxy", None),
                     client_tag=item.pop("client_tag", None),
                     template=item.pop("template", None),
+                    engine=item.pop("engine", "camoufox"),
                     **item,
                 )
                 result["created"] += 1

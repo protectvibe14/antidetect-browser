@@ -58,13 +58,21 @@ def _proxy_manager():
     return _instantiate(ProxyManager)
 
 
-def _launch_function():
-    """Return the launch_profile callable (lazy import)."""
+def _launch_function(persona):
+    """Return the launch_profile callable for the persona's engine.
+
+    Dispatches on ``persona['engine']`` via :func:`src.engines.get_engine`
+    so patchright profiles launch on Chromium and camoufox profiles on
+    Firefox.
+    """
+    engine_name = (persona.get("engine") or "camoufox"
+                   if isinstance(persona, dict) else "camoufox")
     try:
-        from src.browser.launcher import launch_profile
+        from src.engines import get_engine
+        engine = get_engine(engine_name)
     except Exception as exc:
-        _fail("browser launcher unavailable: %s" % exc)
-    return launch_profile
+        _fail("engine '%s' unavailable: %s" % (engine_name, exc))
+    return engine.launch_profile
 
 
 _KWARG_ALIASES = {
@@ -133,24 +141,39 @@ def _mask_secrets(persona):
 
 
 def _validate_persona(persona):
-    """Run ConsistencyValidator.validate; return the result list.
+    """Run the engine-aware validator; return the result list.
+
+    :func:`src.fingerprints.validator.validate` dispatches on
+    ``persona['engine']`` (Chromium checks for patchright profiles, the
+    23 Firefox checks otherwise).
 
     Returns None when the validator module is unavailable (caller decides
     how to report that) instead of failing.
     """
     try:
-        from src.fingerprints.validator import ConsistencyValidator
+        from src.fingerprints.validator import validate
     except Exception:
         return None
-    attr = inspect.getattr_static(ConsistencyValidator, "validate", None)
-    if isinstance(attr, (staticmethod, classmethod)):
-        return ConsistencyValidator.validate(persona)
-    return ConsistencyValidator().validate(persona)
+    return validate(persona)
 
 
 # --------------------------------------------------------------------------- #
 # profile commands
 # --------------------------------------------------------------------------- #
+
+def _normalize_engine_arg(engine):
+    """Map a CLI ``--engine`` value to the canonical profile engine name.
+
+    Accepts ``"camoufox"``/``"chromium"`` (plus the other aliases in
+    :func:`src.engines.normalize_engine_name`); fails cleanly on unknown
+    values.
+    """
+    try:
+        from src.engines import normalize_engine_name
+        return normalize_engine_name(engine)
+    except ValueError as exc:
+        _fail(str(exc))
+
 
 def cmd_profile_create(args):
     """Create a profile, optionally attaching a proxy, then validate it."""
@@ -170,7 +193,8 @@ def cmd_profile_create(args):
     persona = _call_adapted(
         pm.create,
         {"name": args.name, "os": args.os, "proxy": proxy,
-         "timezone": args.timezone, "locale": args.locale},
+         "timezone": args.timezone, "locale": args.locale,
+         "engine": _normalize_engine_arg(args.engine)},
         "profile create",
     )
     if not isinstance(persona, dict):
@@ -254,7 +278,7 @@ def cmd_profile_launch(args):
     """Launch a profile's browser and wait for Ctrl+C, then close cleanly."""
     pm = _profile_manager()
     persona = _get_persona_or_fail(pm, args.name)
-    launch_profile = _launch_function()
+    launch_profile = _launch_function(persona)
     try:
         browser = launch_profile(persona, headless=args.headless)
     except TypeError:
@@ -932,6 +956,10 @@ def build_parser():
                           help="name of a proxy to attach")
     p_create.add_argument("--timezone", default=None)
     p_create.add_argument("--locale", default=None)
+    p_create.add_argument("--engine", choices=["camoufox", "chromium"],
+                          default="camoufox",
+                          help="browser engine: camoufox (Firefox, default) "
+                               "or chromium (Patchright)")
     p_create.set_defaults(func=cmd_profile_create)
 
     p_list = p_subs.add_parser("list", help="list profiles")

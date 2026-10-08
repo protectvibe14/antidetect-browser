@@ -5,14 +5,17 @@ pool is too small (10 same-OS personas produced 23 collisions across
 user_agent / viewport / fonts / webgl_renderer / timezone).  It builds
 personas from wide, per-OS value pools so that hundreds of same-OS personas
 stay distinguishable on the high-signal fields, while every output still
-passes all 22 :class:`~src.fingerprints.validator.ConsistencyValidator`
-checks.
+passes every :class:`~src.fingerprints.validator.ConsistencyValidator`
+check.
 
 Design notes
 ------------
-* The browser core is Camoufox = Firefox-based, so generated user agents are
-  **always Firefox UAs**; a Chrome/Chromium UA on the Firefox engine fails the
-  consistency validator and looks fake.
+* The default engine is Camoufox = Firefox-based, so generated user agents
+  are **Firefox UAs by default**; pass ``engine="chromium"`` for the
+  patchright engine and the UA becomes a Chrome UA whose major matches
+  the installed Patchright Chromium (mirroring the Firefox UA auto-match).
+  A Chrome UA on the Firefox engine (or vice versa) fails the consistency
+  validator and looks fake.
 * Exact user-agent uniqueness across 100+ same-OS personas is impossible
   with realistic UAs (real users share UAs too -- that is fine and expected);
   entropy is therefore prioritized in the high-signal fields: canvas_seed
@@ -117,6 +120,30 @@ _UA_TEMPLATES = {
     "linux": (
         "Mozilla/5.0 (X11; Linux x86_64; rv:{rv}) "
         "Gecko/20100101 Firefox/{full}"
+    ),
+}
+
+#: Fallback Chrome versions, used ONLY when the Patchright Chromium binary
+#: is not installed (so its exact version cannot be known) and the caller
+#: did not pin a version: a narrow recent range instead of a guess.
+#: ``full`` is the dotted ``major.minor.build.patch`` form real Chrome UAs
+#: carry (e.g. ``Chrome/153.0.0.0``).
+_FALLBACK_CHROME_VERSIONS = ("152.0.0.0", "153.0.0.0")
+
+# Per-OS Chrome/Chromium UA templates for the patchright engine.
+# ``full`` is the exact dotted build (``Chrome/153.0.8010.12``).
+_CHROME_UA_TEMPLATES = {
+    "windows": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/{full} Safari/537.36"
+    ),
+    "macos": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{full} Safari/537.36"
+    ),
+    "linux": (
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/{full} Safari/537.36"
     ),
 }
 
@@ -296,6 +323,53 @@ def _resolve_ua_version(rng: random.Random,
     return (int(full.split(".")[0]), full)
 
 
+def _resolve_chrome_version(rng: random.Random,
+                            chrome_version: Optional[str] = None
+                            ) -> Tuple[int, str]:
+    """Resolve the Chrome version for a persona UA: ``(major, full)``.
+
+    Priority (mirrors :func:`_resolve_ua_version`):
+
+    1. ``chrome_version`` when the caller pins one explicitly.
+    2. The installed Patchright Chromium's version (via
+       :func:`src.engines.patchright_engine.installed_chromium_version`) —
+       the persona advertises exactly the binary it will run on, so the
+       two can never drift apart.
+    3. A narrow recent range (``_FALLBACK_CHROME_VERSIONS``) when the
+       binary is not installed and nothing was pinned.
+    """
+    if chrome_version is not None:
+        full = str(chrome_version).strip()
+        return (int(full.split(".")[0]), full)
+    try:
+        from src.engines.patchright_engine import installed_chromium_version
+        installed = installed_chromium_version()
+    except Exception:
+        installed = None
+    if installed is not None:
+        return installed
+    full = rng.choice(_FALLBACK_CHROME_VERSIONS)
+    return (int(full.split(".")[0]), full)
+
+
+def chrome_user_agent(os_name: str,
+                      version_full: Optional[str] = None,
+                      rng: Optional[random.Random] = None) -> str:
+    """Build a Chrome UA for ``os_name`` (``'windows'``/``'macos'``/``'linux'``).
+
+    :param version_full: explicit dotted Chrome build (e.g.
+        ``"153.0.8010.12"``); when omitted the installed Patchright
+        Chromium version is used, falling back to a narrow recent range.
+    :raises ValueError: on an unknown ``os_name``.
+    """
+    if os_name not in _VALID_OS:
+        raise ValueError("os must be one of %s" % (_VALID_OS,))
+    if version_full is None:
+        _rng = rng if rng is not None else random.Random()
+        _major, version_full = _resolve_chrome_version(_rng)
+    return _CHROME_UA_TEMPLATES[os_name].format(full=version_full)
+
+
 def _sample_fonts(os_name: str, rng: random.Random) -> List[str]:
     """Sample a font list with random dropout, always keeping a marker font.
 
@@ -339,6 +413,8 @@ def generate_persona(
     os: str = "windows",
     rng: Optional[random.Random] = None,
     firefox_version: Optional[str] = None,
+    chrome_version: Optional[str] = None,
+    engine: str = "firefox",
     **overrides: Any,
 ) -> Dict[str, Any]:
     """Generate a high-entropy, validator-consistent persona dict.
@@ -351,20 +427,36 @@ def generate_persona(
     :param firefox_version: optional pinned Firefox version string for the
         UA (e.g. ``"156.0.1"``). When omitted, the installed Camoufox
         browser's version is used; when no browser is installed, a narrow
-        recent range is sampled.
+        recent range is sampled. Only used when ``engine="firefox"``.
+    :param chrome_version: optional pinned Chrome version string for the
+        UA (e.g. ``"153.0.8010.12"``). When omitted, the installed
+        Patchright Chromium's version is used; when no binary is
+        installed, a narrow recent range is sampled. Only used when
+        ``engine="chromium"``.
+    :param engine: ``"firefox"`` (default, for the camoufox engine) or
+        ``"chromium"`` (for the patchright engine). Selects the UA family;
+        every other field is generated the same way (OS-consistent).
     :param overrides: fields merged over the generated persona; they win on
         any conflict (including ``proxy``).
     :return: dict with exactly the 18 persona contract keys.
-    :raises ValueError: on an unknown ``os`` value.
+    :raises ValueError: on an unknown ``os`` or ``engine`` value.
     """
     os_name = os
     if os_name not in _VALID_OS:
         raise ValueError("os must be one of %s" % (_VALID_OS,))
+    if engine not in ("firefox", "chromium"):
+        raise ValueError(
+            "engine must be 'firefox' or 'chromium', got %r" % (engine,))
     if rng is None:
         rng = random.Random()
 
-    ua_major, ua_full = _resolve_ua_version(rng, firefox_version)
-    ua_rv = "%d.0" % ua_major
+    if engine == "chromium":
+        _major, chrome_full = _resolve_chrome_version(rng, chrome_version)
+        user_agent = _CHROME_UA_TEMPLATES[os_name].format(full=chrome_full)
+    else:
+        ua_major, ua_full = _resolve_ua_version(rng, firefox_version)
+        ua_rv = "%d.0" % ua_major
+        user_agent = _UA_TEMPLATES[os_name].format(rv=ua_rv, full=ua_full)
     screen_w, screen_h = _sample_resolution(os_name, rng)
     vendor, renderer = rng.choice(_WEBGL_POOLS[os_name])
     country = rng.choice(_COUNTRY_CODES)
@@ -372,7 +464,7 @@ def generate_persona(
     persona: Dict[str, Any] = {
         "name": name,
         "os": os_name,
-        "user_agent": _UA_TEMPLATES[os_name].format(rv=ua_rv, full=ua_full),
+        "user_agent": user_agent,
         "platform": _PLATFORM_FOR_OS[os_name],
         "viewport": _viewport_for((screen_w, screen_h)),
         "screen": {"width": screen_w, "height": screen_h},

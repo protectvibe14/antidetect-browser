@@ -2,7 +2,6 @@
 
 import src._vendor  # noqa: F401  (must stay first: keeps vendored deps importable)
 
-import inspect
 import re
 import threading
 
@@ -44,18 +43,12 @@ def _extract_ipv4(text):
     return None
 
 
-def _validate_with(validator_cls, persona):
-    """Call validator (staticmethod/classmethod or instance method) on a persona."""
-    attr = inspect.getattr_static(validator_cls, "validate", None)
-    if isinstance(attr, (staticmethod, classmethod)):
-        return validator_cls.validate(persona)
-    return validator_cls().validate(persona)
-
-
 class HealthChecker:
     """Checks a profile persona for fingerprint consistency and network health.
 
-    The consistency part always runs via the sibling ConsistencyValidator.
+    The consistency part always runs via the engine-aware
+    :func:`src.fingerprints.validator.validate` (dispatches on the
+    profile's ``engine`` field).
     The network part is best-effort: a headless launch + one page visit inside
     a hard overall timeout. Any failure there is recorded, never raised.
     The detection part visits third-party bot/fingerprint test sites
@@ -127,14 +120,19 @@ class HealthChecker:
                          + network_part), 1)
 
     def _run_consistency(self, persona):
-        """Run ConsistencyValidator.validate; synthesize a failure if unavailable."""
+        """Run the engine-aware validator; synthesize a failure if unavailable.
+
+        :func:`src.fingerprints.validator.validate` dispatches on
+        ``persona['engine']``: the Chromium check set for patchright
+        profiles, the 23 Firefox checks otherwise.
+        """
         try:
-            from src.fingerprints.validator import ConsistencyValidator
+            from src.fingerprints.validator import validate
         except Exception as exc:
             return [{"check": "validator-available", "passed": False,
                      "detail": "validator module unavailable: %s" % exc}]
         try:
-            results = _validate_with(ConsistencyValidator, persona)
+            results = validate(persona)
         except Exception as exc:
             return [{"check": "validator-run", "passed": False,
                      "detail": "validator raised: %s" % exc}]

@@ -8,6 +8,17 @@ no I/O, no network, stdlib only (``re`` and ``zoneinfo``), except for check
 :func:`src.browser.launcher.installed_firefox_version` (itself I/O-free
 apart from reading the local browser dir) and never fails when the browser
 is not installed.
+
+Engine dispatch: :func:`validate` routes on ``profile['engine']`` —
+the full 23 Firefox checks (:class:`ConsistencyValidator`) for camoufox
+profiles (the default), and a Chromium-appropriate subset
+(:class:`ChromiumConsistencyValidator`) for patchright profiles. The
+Chromium checks assert a Chrome UA (never a ``HeadlessChrome`` token)
+whose major matches the installed Patchright Chromium, platform↔OS
+consistency, and the generic automation-tell expectations; they
+deliberately skip fingerprint-spoof fields (WebGL/fonts) because
+patchright does not spoof them — its posture is honest, internally
+consistent stock-Chromium signals.
 """
 
 from __future__ import annotations
@@ -83,6 +94,7 @@ _VALID_OS_VALUES = frozenset({"windows", "macos", "linux"})
 
 _LOCALE_RE = re.compile(r"^[a-z]{2}-[A-Z]{2}$")
 _FIREFOX_RE = re.compile(r"Firefox/(\d+)")
+_CHROME_RE = re.compile(r"Chrome/(\d+)")
 
 
 def _result(name: str, passed: bool, detail: str) -> Dict[str, Any]:
@@ -403,7 +415,97 @@ class ConsistencyValidator:
                         f"UA Firefox/{ua_major} != installed browser {installed_full} "
                         f"(major {installed_major})")
 
+    # -- Chromium (patchright engine) checks --------------------------------
+
+    def check_ua_chrome_sane(self, persona: Dict[str, Any]) -> Dict[str, Any]:
+        """UA must be a Chrome UA with major >= 100 and no HeadlessChrome token.
+
+        The ``HeadlessChrome`` token is the default headless UA leak our
+        launcher always overrides; a persona carrying it would launch
+        detectably.
+        """
+        name = "ua_chrome_sane"
+        ua = self._get(persona, "user_agent") or ""
+        if "HeadlessChrome" in ua:
+            return _result(name, False,
+                            "UA contains the 'HeadlessChrome' headless leak token")
+        m = _CHROME_RE.search(ua)
+        if not m:
+            return _result(name, False,
+                            "UA does not contain a Chrome/<version> token")
+        major = int(m.group(1))
+        if major < 100:
+            return _result(name, False, f"Chrome major version {major} < 100")
+        return _result(name, True, f"Chrome major version {major} is sane")
+
+    def check_ua_matches_installed_chromium(
+            self, persona: Dict[str, Any]) -> Dict[str, Any]:
+        """Persona UA Chrome major must match the installed Patchright Chromium.
+
+        Passes with a note (never fails) when the Chromium binary is not
+        installed or its version cannot be determined — an unknown version
+        is not an inconsistency. Mirrors ``ua_matches_installed_browser``
+        for the Firefox engine.
+        """
+        name = "ua_matches_installed_chromium"
+        try:
+            from src.engines.patchright_engine import installed_chromium_version
+            installed = installed_chromium_version()
+        except Exception as exc:  # noqa: BLE001 - version lookup must not fail validation
+            return _result(name, True, f"version lookup failed ({exc}); skipped")
+        if installed is None:
+            return _result(name, True,
+                            "chromium binary not installed; version match skipped")
+        installed_major, installed_full = installed
+        ua = self._get(persona, "user_agent") or ""
+        if "HeadlessChrome" in ua:
+            return _result(name, False,
+                            "UA contains the 'HeadlessChrome' headless leak token")
+        m = _CHROME_RE.search(ua)
+        if not m:
+            return _result(name, False, "UA has no Chrome/<version> token to compare")
+        ua_major = int(m.group(1))
+        if ua_major == installed_major:
+            return _result(name, True,
+                            f"UA Chrome/{ua_major} matches installed chromium {installed_full}")
+        return _result(name, False,
+                        f"UA Chrome/{ua_major} != installed chromium {installed_full} "
+                        f"(major {installed_major})")
+
+    def check_webdriver_false(self, persona: Dict[str, Any]) -> Dict[str, Any]:
+        """Automation tell ``navigator.webdriver`` must be false.
+
+        Generic across engines: both camoufox and patchright hide this
+        tell at launch. The persona dict carries no webdriver field, so a
+        missing/False value passes; an explicit True fails.
+        """
+        name = "webdriver_false"
+        value = self._get(persona, "webdriver")
+        if value is None or value is False:
+            return _result(name, True,
+                            "navigator.webdriver hidden by the engine (no opt-out in persona)")
+        return _result(name, False,
+                        f"persona declares webdriver={value!r}; engine must hide it")
+
     # -- runner ------------------------------------------------------------
+
+    def _run_checks(self, persona: Dict[str, Any],
+                    check_names: List[str]) -> List[Dict[str, Any]]:
+        """Run ``check_names`` against ``persona``.
+
+        Every check is wrapped in try/except: a check that raises is
+        reported as ``passed=False`` with the exception in the detail, so
+        one bad check can never crash the whole run.
+        """
+        results: List[Dict[str, Any]] = []
+        for name in check_names:
+            method = getattr(self, "check_" + name)
+            try:
+                result = method(persona)
+            except Exception as exc:  # noqa: BLE001 - defensive catch is the point
+                result = _result(name, False, f"check raised {type(exc).__name__}: {exc}")
+            results.append(result)
+        return results
 
     def validate(self, persona: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Run all consistency checks against ``persona``.
@@ -413,15 +515,7 @@ class ConsistencyValidator:
         caught and reported as ``passed=False`` with the exception in the
         detail, so one bad check can never crash the whole run.
         """
-        results: List[Dict[str, Any]] = []
-        for name in CHECK_NAMES:
-            method = getattr(self, "check_" + name)
-            try:
-                result = method(persona)
-            except Exception as exc:  # noqa: BLE001 - defensive catch is the point
-                result = _result(name, False, f"check raised {type(exc).__name__}: {exc}")
-            results.append(result)
-        return results
+        return self._run_checks(persona, CHECK_NAMES)
 
 
 #: Ordered list of all check names run by :meth:`ConsistencyValidator.validate`.
@@ -450,3 +544,70 @@ CHECK_NAMES: List[str] = [
     "os_value_valid",
     "ua_matches_installed_browser",
 ]
+
+
+#: Ordered list of check names run for patchright (Chromium) profiles.
+#: Inherits the generic coherence checks from :class:`ConsistencyValidator`
+#: and replaces the Firefox-specific UA checks with Chromium ones. WebGL /
+#: fonts checks are deliberately absent: patchright does not spoof those
+#: signals, so there is nothing engine-specific to assert about them.
+CHROMIUM_CHECK_NAMES: List[str] = [
+    "ua_os_token",
+    "ua_chrome_sane",
+    "platform_matches_os",
+    "timezone_valid",
+    "locale_format",
+    "timezone_locale_region",
+    "geolocation_timezone_plausible",
+    "viewport_within_screen",
+    "viewport_aspect_sane",
+    "screen_resolution_common",
+    "hardware_concurrency_sane",
+    "device_memory_sane",
+    "touch_points_desktop_zero",
+    "color_depth_valid",
+    "canvas_seed_present",
+    "proxy_shape_valid",
+    "proxy_webrtc_managed",
+    "name_present",
+    "os_value_valid",
+    "ua_matches_installed_chromium",
+    "webdriver_false",
+]
+
+
+class ChromiumConsistencyValidator(ConsistencyValidator):
+    """Consistency checks for patchright (Chromium) personas.
+
+    Reuses every generic check from :class:`ConsistencyValidator`; only the
+    UA-family checks differ (Chrome instead of Firefox). ``validate``
+    runs ``CHROMIUM_CHECK_NAMES`` instead of ``CHECK_NAMES``.
+    """
+
+    def validate(self, persona: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Run the Chromium check set against ``persona``.
+
+        Returns a list of ``{'check': str, 'passed': bool, 'detail': str}``
+        dicts, one per check in ``CHROMIUM_CHECK_NAMES`` order.
+        """
+        return self._run_checks(persona, CHROMIUM_CHECK_NAMES)
+
+
+def validate(profile: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Validate a profile persona, dispatching on ``profile['engine']``.
+
+    - ``engine == "patchright"`` (or the ``"chromium"`` alias): the
+      Chromium check set via :class:`ChromiumConsistencyValidator`.
+    - anything else (``"camoufox"``, missing, unknown): the full 23
+      Firefox checks via :class:`ConsistencyValidator` (safe default —
+      unknown engines fall back to the strictest set).
+
+    Never raises on bad persona data: per-check failures are caught by
+    the validators themselves.
+    """
+    engine = ""
+    if isinstance(profile, dict):
+        engine = str(profile.get("engine") or "").strip().lower()
+    if engine in ("patchright", "chromium", "chrome"):
+        return ChromiumConsistencyValidator().validate(profile)
+    return ConsistencyValidator().validate(profile)

@@ -6,6 +6,7 @@ They are vendored (not pip-installed) so the project is self-contained.
 | Package | Version | License | Upstream |
 |---|---|---|---|
 | camoufox | 0.5.8 | MPL-2.0 | https://github.com/daijro/camoufox |
+| patchright | 1.63.0 | Apache-2.0 | https://github.com/Kaliiiiiiiiii-Vinyzu/patchright-python (patched Playwright driver; launches stock Chromium — the browser binary itself is NOT vendored, see `patchright/README.md`) |
 | browserforge | (see METADATA) | MIT | https://github.com/daijro/browserforge |
 | fpgen | 1.3.0 | (see METADATA) | https://github.com/daijro/fpgen (fingerprint ML model; model data downloads on first run via `ensure_fpgen_model()`) |
 | nazak-sync (reference copy only, not executed) | de06b50 | MIT | https://github.com/wwewtech/nazak-browser-studio — `nazak/core/synchronizer.py` verbatim copy; see `nazak-sync/ATTRIBUTION.md`. Our `src/sync/` is a clean-room rewrite of its design adapted to our Playwright page objects. |

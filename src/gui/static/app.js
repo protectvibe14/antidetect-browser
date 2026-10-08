@@ -399,6 +399,7 @@ $("form-new").addEventListener("submit", async (e) => {
   const payload = {
     name: $("new-name").value.trim(),
     os: $("new-os").value,
+    engine: $("new-engine").value === "patchright" ? "patchright" : "camoufox",
   };
   const proxyName = $("new-proxy").value;
   const tag = $("new-tag").value.trim();

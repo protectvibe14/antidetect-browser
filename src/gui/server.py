@@ -27,7 +27,6 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from src.bulk.importer import bulk_import
-from src.browser.launcher import launch_profile, browser_binary_present
 from src.health.checker import HealthChecker
 from src import paths as _paths
 from src.profiles.manager import ProfileManager
@@ -173,6 +172,7 @@ def _profile_view(persona):
     return {
         "name": persona.get("name"),
         "os": persona.get("os"),
+        "engine": persona.get("engine") or "camoufox",
         "client_tag": persona.get("client_tag"),
         "proxy_label": proxy_label,
         "status": status,
@@ -180,10 +180,18 @@ def _profile_view(persona):
     }
 
 
+def _engine_for(persona):
+    """Return the Engine for a persona dict (dispatch on its engine field)."""
+    from src.engines import get_engine
+    engine_name = (persona.get("engine") or "camoufox"
+                   if isinstance(persona, dict) else "camoufox")
+    return get_engine(engine_name)
+
+
 def _launch_worker(name, persona):
     """Daemon-thread body: launch the browser, then record the outcome."""
     try:
-        launched = launch_profile(persona, headless=False)
+        launched = _engine_for(persona).launch_profile(persona, headless=False)
     except Exception as exc:
         with _running_lock:
             entry = _running.get(name)
@@ -246,6 +254,7 @@ class ProfileCreate(BaseModel):
     os: str = "windows"
     proxy_name: str | None = None
     client_tag: str | None = None
+    engine: str | None = None  # "camoufox" (default) or "chromium"/"patchright"
 
 
 class SyncStart(BaseModel):
@@ -490,9 +499,14 @@ def create_app() -> FastAPI:
                 raise HTTPException(
                     400, "unknown proxy_name '%s'" % body.proxy_name)
         try:
+            from src.engines import normalize_engine_name
+            engine = normalize_engine_name(body.engine or "camoufox")
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+        try:
             persona = _profile_manager.create(
                 name, os=body.os, proxy=proxy,
-                client_tag=body.client_tag)
+                client_tag=body.client_tag, engine=engine)
         except ValueError as exc:
             # Race-safe: re-check existence to distinguish a duplicate
             # (409) from a bad argument (400).
@@ -534,17 +548,23 @@ def create_app() -> FastAPI:
                 raise HTTPException(
                     409, "profile '%s' is already %s"
                     % (name, entry["status"]))
-            # Guard BEFORE spawning the thread: launch_profile hands a
-            # missing binary to camoufox, which would kick off a multi-GB
-            # browser download instead of failing fast.
+            # Guard BEFORE spawning the thread: a missing binary would
+            # kick off a multi-GB browser download instead of failing fast.
             try:
-                binary_ok = browser_binary_present()
+                engine = _engine_for(persona)
+                binary_ok = engine.binary_present()
             except Exception:
                 binary_ok = False
+                engine = None
             if not binary_ok:
-                raise HTTPException(
-                    409, "camoufox browser binary not installed; "
-                         "run setup_browser.py first")
+                if engine is not None and engine.name == "patchright":
+                    hint = ("patchright chromium binary not installed; run "
+                            "PYTHONPATH=vendor .venv/bin/python -m patchright "
+                            "install chromium")
+                else:
+                    hint = ("camoufox browser binary not installed; "
+                            "run setup_browser.py first")
+                raise HTTPException(409, hint)
             _running[name] = {"status": "starting", "launched": None,
                               "error": None}
         threading.Thread(target=_launch_worker, args=(name, persona),
