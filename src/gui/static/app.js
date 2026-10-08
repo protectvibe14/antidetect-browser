@@ -46,6 +46,10 @@ const api = {
     if (clientTag) fd.append("client_tag", clientTag);
     return req("POST", "/api/bulk/import", fd, { raw: true });
   },
+  syncStart: (p) => req("POST", "/api/sync/start", JSON.stringify(p)),
+  syncStop: (id) => req("POST", "/api/sync/stop", JSON.stringify({ session_id: id })),
+  syncStatus: (id) => req("GET", "/api/sync/status" + (id ? "?session_id=" + encodeURIComponent(id) : "")),
+  syncTyping: (id, enabled) => req("POST", "/api/sync/typing", JSON.stringify({ session_id: id, enabled })),
 };
 
 /* ---------------- State ---------------- */
@@ -55,6 +59,7 @@ const state = {
   query: "",
   tag: null,            // null = All profiles; "__untagged__" = no tag; else the tag string
   proxiesLoaded: false,
+  syncSessionId: null,  // active sync session, if any
 };
 
 /* ---------------- DOM helpers ---------------- */
@@ -426,6 +431,7 @@ function renderHealth(h) {
 
 /* ---------------- Top bar wiring ---------------- */
 $("btn-new").addEventListener("click", () => openModal("modal-new"));
+$("btn-sync").addEventListener("click", () => openSync());
 $("btn-bulk").addEventListener("click", () => {
   $("bulk-result").hidden = true;
   $("bulk-result").innerHTML = "";
@@ -435,6 +441,124 @@ $("search").addEventListener("input", (e) => {
   state.query = e.target.value.trim();
   renderTags();   // keep counts accurate
   renderTable();  // live filter, no refetch
+});
+
+/* ---------------- Sync modal ---------------- */
+function syncProfileOptions(exclude) {
+  return state.profiles
+    .filter(p => p.name !== exclude)
+    .map(p => {
+      const busy = p.status === "running" || p.status === "starting";
+      return `<option value="${esc(p.name)}"${busy ? " disabled" : ""}>${esc(p.name)}${busy ? " (running)" : ""}</option>`;
+    }).join("");
+}
+
+function openSync() {
+  const masterSel = $("sync-master");
+  masterSel.innerHTML = syncProfileOptions(null) || `<option value="">No profiles yet</option>`;
+  renderSyncFollowers();
+  masterSel.onchange = renderSyncFollowers;
+  refreshSyncStatus();
+  openModal("modal-sync");
+}
+
+function renderSyncFollowers() {
+  const master = $("sync-master").value;
+  const box = $("sync-followers");
+  const rows = state.profiles.filter(p => p.name !== master);
+  if (rows.length === 0) {
+    box.innerHTML = `<div class="ps-empty">No other profiles to mirror to.</div>`;
+    return;
+  }
+  box.innerHTML = rows.map(p => {
+    const busy = p.status === "running" || p.status === "starting";
+    return `<label class="ps-check${busy ? " off" : ""}">
+      <input type="checkbox" value="${esc(p.name)}"${busy ? " disabled" : ""}>
+      <span class="ps-check-name">${esc(p.name)}${busy ? " (running)" : ""}</span>
+    </label>`;
+  }).join("");
+}
+
+function renderSyncStatus(st) {
+  const box = $("sync-status");
+  const stopBtn = $("btn-sync-stop");
+  const startBtn = $("btn-sync-start");
+  if (!st) {
+    box.hidden = true;
+    box.innerHTML = "";
+    stopBtn.hidden = true;
+    startBtn.disabled = false;
+    return;
+  }
+  const frows = Object.entries(st.followers || {}).map(([n, f]) =>
+    `${esc(n)}: ${esc(f.state)} (mirrored ${f.mirrored}, dropped ${f.dropped}, queued ${f.queue_depth})`
+  ).join("<br>");
+  box.hidden = false;
+  box.innerHTML =
+    `<span class="ok">Session ${esc(st.session_id)}</span> &middot; ` +
+    `master <b>${esc(st.master)}</b> &middot; ` +
+    `mirrored <b>${st.mirrored_total}</b> &middot; ` +
+    `typing ${st.typing_enabled ? "on" : "off"} &middot; ` +
+    `${st.alive ? "alive" : "stopped"}<br>${frows}` +
+    (st.last_error ? `<br><span class="err">${esc(st.last_error)}</span>` : "");
+  stopBtn.hidden = false;
+  startBtn.disabled = true;
+}
+
+async function refreshSyncStatus() {
+  renderSyncStatus(null);
+  if (!state.syncSessionId) return;
+  try {
+    renderSyncStatus(await api.syncStatus(state.syncSessionId));
+  } catch {
+    state.syncSessionId = null; // session gone server-side
+  }
+}
+
+$("form-sync").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const master = $("sync-master").value;
+  const followers = [...$("sync-followers").querySelectorAll("input[type=checkbox]:checked")]
+    .map(c => c.value);
+  if (!master) { toast("Pick a master profile.", "error"); return; }
+  if (followers.length === 0) { toast("Pick at least one follower.", "error"); return; }
+  if (followers.includes(master)) { toast("Master cannot also be a follower.", "error"); return; }
+  const payload = {
+    master,
+    followers,
+    headless: $("sync-headless").value === "1",
+    typing: $("sync-typing").value === "1",
+  };
+  try {
+    const res = await api.syncStart(payload);
+    state.syncSessionId = res.session_id;
+    renderSyncStatus(res.status);
+    toast(`Sync session started: ${master} → ${followers.length} follower(s).`, "success");
+  } catch (err) {
+    toast("Sync start failed: " + (err.message || err), "error");
+  }
+});
+
+$("btn-sync-stop").addEventListener("click", async () => {
+  if (!state.syncSessionId) return;
+  try {
+    await api.syncStop(state.syncSessionId);
+    toast("Sync session stopped.", "success");
+  } catch (err) {
+    toast("Sync stop failed: " + (err.message || err), "error");
+  }
+  state.syncSessionId = null;
+  renderSyncStatus(null);
+});
+
+$("sync-typing").addEventListener("change", async (e) => {
+  if (!state.syncSessionId) return; // applies at start otherwise
+  try {
+    renderSyncStatus(await api.syncTyping(state.syncSessionId, e.target.value === "1"));
+    toast("Typing mirror " + (e.target.value === "1" ? "enabled." : "disabled."), "success");
+  } catch (err) {
+    toast("Typing toggle failed: " + (err.message || err), "error");
+  }
 });
 
 /* ---------------- Boot ---------------- */

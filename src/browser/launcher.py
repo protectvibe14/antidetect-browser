@@ -298,3 +298,81 @@ def launch_profile(persona: dict, headless: bool = False) -> LaunchedProfile:
         camoufox.__exit__(None, None, None)
         raise
     return LaunchedProfile(camoufox, browser, page)
+
+
+class SharedBrowser:
+    """A profile launched on a caller-owned Playwright instance.
+
+    Same ``.page`` / ``.browser`` / ``.close()`` surface as
+    :class:`LaunchedProfile`, but :meth:`close` only closes this browser's
+    context — the shared Playwright keeps running for the sibling browsers
+    and is stopped by whoever entered it. See :func:`launch_profile_on`.
+    """
+
+    def __init__(self, browser, page):
+        self._browser = browser
+        self._page = page
+        self._closed = False
+
+    @property
+    def page(self):
+        """The Playwright page for this profile."""
+        return self._page
+
+    @property
+    def browser(self):
+        """The underlying launched object (a ``BrowserContext``)."""
+        return self._browser
+
+    def close(self):
+        """Close this browser context only. Safe to call more than once."""
+        if self._closed:
+            return
+        self._closed = True
+        for fn in (self._page.close, self._browser.close):
+            try:
+                fn()
+            except Exception:
+                pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.close()
+        return False
+
+
+def launch_profile_on(playwright, persona: dict, headless: bool = False) -> SharedBrowser:
+    """Launch a profile's browser on an already-entered Playwright instance.
+
+    Needed when several browsers must stay open on ONE thread (e.g. the
+    sync session): entering a second ``Camoufox()``/``sync_playwright()``
+    while the first is still open raises Playwright's "Sync API inside the
+    asyncio loop" error, because each enter leaves its event loop running.
+    Sharing one Playwright avoids that entirely.
+
+    Args:
+        playwright: A ``sync_playwright()`` instance whose ``__enter__``
+            was already called on this thread.
+        persona: Persona dict (same as :func:`launch_profile`).
+        headless: Passed through to camoufox.
+
+    Returns:
+        A :class:`SharedBrowser`. Call :meth:`SharedBrowser.close` when
+        done; it does NOT stop the shared Playwright.
+    """
+    from camoufox.sync_api import NewBrowser
+
+    kwargs = build_launch_kwargs(persona, headless=headless)
+    os.makedirs(kwargs["user_data_dir"], exist_ok=True)
+    browser = NewBrowser(playwright, **kwargs)
+    try:
+        page = browser.new_page()
+    except Exception:
+        try:
+            browser.close()
+        except Exception:
+            pass
+        raise
+    return SharedBrowser(browser, page)

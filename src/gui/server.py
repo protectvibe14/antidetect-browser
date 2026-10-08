@@ -28,6 +28,7 @@ from src.browser.launcher import launch_profile, browser_binary_present
 from src.health.checker import HealthChecker
 from src.profiles.manager import ProfileManager
 from src.proxy.manager import ProxyManager
+from src.sync import SyncManager
 
 _VALID_OS = ("windows", "macos", "linux")
 
@@ -45,6 +46,10 @@ _running_lock = threading.Lock()
 
 # last_used[name] = ISO-8601 UTC timestamp of the last successful launch
 _last_used = {}
+
+# Sync sessions live here so the endpoints stay thin; the manager owns its
+# threads and closes session browsers on stop.
+_sync_manager = SyncManager(persona_getter=_profile_manager.get)
 
 
 # ---------------------------------------------------------------------------
@@ -123,6 +128,15 @@ def _close_all_running():
         if entry is not None:
             entry["status"] = "stopped"
             entry["launched"] = None
+    # Sync sessions own their browsers on their own threads; stop them too.
+    try:
+        for session in _sync_manager.status().get("sessions", []):
+            try:
+                _sync_manager.stop(session["session_id"])
+            except Exception:
+                pass
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -135,6 +149,28 @@ class ProfileCreate(BaseModel):
     os: str = "windows"
     proxy_name: str | None = None
     client_tag: str | None = None
+
+
+class SyncStart(BaseModel):
+    """Body for POST /api/sync/start."""
+
+    master: str
+    followers: list[str] = []
+    headless: bool = True
+    typing: bool = True
+
+
+class SyncStop(BaseModel):
+    """Body for POST /api/sync/stop."""
+
+    session_id: str
+
+
+class SyncTyping(BaseModel):
+    """Body for POST /api/sync/typing."""
+
+    session_id: str
+    enabled: bool
 
 
 # ---------------------------------------------------------------------------
@@ -292,6 +328,62 @@ def create_app() -> FastAPI:
         except KeyError:
             raise HTTPException(404, "no profile named '%s'" % name)
         return HealthChecker().check(persona)
+
+    # -- synchronizer -------------------------------------------------
+    @app.post("/api/sync/start", status_code=201)
+    def sync_start(body: SyncStart):
+        """Start a sync session mirroring the master onto the followers.
+
+        Refuses (409) when any named profile is already running in the GUI:
+        a sync session launches its own browser instances, and two
+        instances on one profile directory would collide on the browser
+        lock.
+        """
+        names = [body.master, *(body.followers or [])]
+        with _running_lock:
+            busy = [n for n in names
+                    if _running.get(n, {}).get("status")
+                    in ("running", "starting")]
+        if busy:
+            raise HTTPException(
+                409, "profiles already running: %s; stop them first"
+                % ", ".join(busy))
+        try:
+            session_id = _sync_manager.create(
+                body.master, body.followers or [],
+                headless=body.headless, typing_enabled=body.typing)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+        return {"session_id": session_id,
+                "status": _sync_manager.status(session_id)}
+
+    @app.post("/api/sync/stop")
+    def sync_stop(body: SyncStop):
+        """Stop a sync session and close its browsers."""
+        try:
+            final = _sync_manager.stop(body.session_id)
+        except KeyError:
+            raise HTTPException(
+                404, "no sync session '%s'" % body.session_id)
+        return {"stopped": True, "status": final}
+
+    @app.get("/api/sync/status")
+    def sync_status(session_id: str | None = None):
+        """Status of one sync session, or all sessions when omitted."""
+        try:
+            return _sync_manager.status(session_id)
+        except KeyError:
+            raise HTTPException(
+                404, "no sync session '%s'" % session_id)
+
+    @app.post("/api/sync/typing")
+    def sync_typing(body: SyncTyping):
+        """Enable/disable keystroke mirroring for a running session."""
+        try:
+            return _sync_manager.set_typing(body.session_id, body.enabled)
+        except KeyError:
+            raise HTTPException(
+                404, "no sync session '%s'" % body.session_id)
 
     # -- proxies ----------------------------------------------------------
     @app.get("/api/proxies")
