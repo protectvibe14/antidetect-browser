@@ -50,6 +50,12 @@ const api = {
     "/api/warmup/status?profile_name=" + encodeURIComponent(name) +
     "&scenario=" + encodeURIComponent(scenario)),
   listProxies: () => req("GET", "/api/proxies").then(d => d.proxies || []),
+  listGroups: () => req("GET", "/api/groups").then(d => d.groups || []),
+  createGroup: (p) => req("POST", "/api/groups", JSON.stringify(p)),
+  deleteGroup: (name) => req("DELETE", "/api/groups/" + encodeURIComponent(name)),
+  assignGroup: (profile, group) => req("POST",
+    "/api/profiles/" + encodeURIComponent(profile) + "/group",
+    JSON.stringify({ group_name: group })),
   bulkImport: (file, clientTag) => {
     const fd = new FormData();
     fd.append("file", file);
@@ -132,8 +138,10 @@ async function logout() {
 const state = {
   profiles: [],
   proxies: [],
+  groups: [],
   query: "",
   tag: null,            // null = All profiles; "__untagged__" = no tag; else the tag string
+  group: "",            // "" = All groups; "__ungrouped__" = no group; else group name
   proxiesLoaded: false,
   syncSessionId: null,  // active sync session, if any
 };
@@ -218,6 +226,10 @@ function matches(p) {
     const key = p.client_tag || "__untagged__";
     if (key !== state.tag) return false;
   }
+  if (state.group) {
+    const key = p.group_name || "__ungrouped__";
+    if (key !== state.group) return false;
+  }
   if (state.query) {
     const q = state.query.toLowerCase();
     const hay = (p.name + " " + (p.client_tag || "")).toLowerCase();
@@ -249,7 +261,7 @@ function renderTable() {
       ? `<div class="ps-empty"><div>No profiles yet.</div>
          <button class="ps-btn primary sm" id="empty-new">+ Create one</button></div>`
       : `<div class="ps-empty"><div>No profiles match your search or tag filter.</div></div>`;
-    body.innerHTML = `<tr><td colspan="7">${empty}</td></tr>`;
+    body.innerHTML = `<tr><td colspan="8">${empty}</td></tr>`;
     const b = $("empty-new");
     if (b) b.addEventListener("click", () => openModal("modal-new"));
     return;
@@ -270,9 +282,13 @@ function renderTable() {
     const proxy = p.proxy_label
       ? `<span class="ps-proxy"><span class="ps-proxy-ic">&#8646;</span>${esc(p.proxy_label)}</span>`
       : `<span class="ps-proxy off">Direct</span>`;
+    const group = p.group_name
+      ? `<span class="ps-tag group">${esc(p.group_name)}</span>`
+      : `<span class="ps-tag none">&mdash;</span>`;
     return `<tr data-name="${name}">
       <td>${statusCell(p)}</td>
       <td><div class="ps-name-row"><span class="ps-name">${name}</span></div></td>
+      <td>${group}</td>
       <td>${tag}</td>
       <td><span class="ps-os">${esc(p.os || "?")}</span></td>
       <td>${proxy}</td>
@@ -357,6 +373,25 @@ async function refreshProfiles() {
   } finally { refreshing = false; }
   refreshProfiles._failed = false;
   renderAll(); // preserves search text + selected tag (both live in state)
+}
+
+async function refreshGroups() {
+  try {
+    state.groups = await api.listGroups();
+  } catch (e) {
+    state.groups = [];
+    return;
+  }
+  const sel = $("group-filter");
+  const cur = sel.value;
+  sel.innerHTML = `<option value="">All groups</option>
+    <option value="__ungrouped__">Ungrouped</option>` +
+    state.groups.map(g =>
+      `<option value="${esc(g.name)}">${esc(g.name)} (${g.profile_count})</option>`
+    ).join("");
+  // Restore selection if the group still exists.
+  if ([...sel.options].some(o => o.value === cur)) sel.value = cur;
+  else { sel.value = ""; state.group = ""; }
 }
 
 function setConn(up) {
@@ -597,6 +632,12 @@ function fillEditForm(prof) {
   $("edit-os").value = fp.os || prof.os || "windows";
   $("edit-engine").value = prof.engine || "camoufox";
   $("edit-tag").value = prof.client_tag || "";
+  // group
+  const gsel = $("edit-group");
+  gsel.innerHTML = `<option value="">Ungrouped</option>` +
+    state.groups.map(g =>
+      `<option value="${esc(g.name)}">${esc(g.name)}</option>`).join("");
+  gsel.value = prof.group_name || "";
   // proxy
   loadProxyOptions("edit-proxy").then(() => {
     const px = fp.proxy || {};
@@ -648,6 +689,7 @@ async function submitEdit(e) {
     os: $("edit-os").value,
     engine: $("edit-engine").value,
     proxy_name: $("edit-proxy").value,
+    group_name: $("edit-group").value || null,
     timezone: $("edit-tz").value.trim() || null,
     locale: $("edit-locale").value.trim() || null,
     user_agent: $("edit-ua").value.trim() || null,
@@ -776,6 +818,62 @@ $("search").addEventListener("input", (e) => {
   renderTags();   // keep counts accurate
   renderTable();  // live filter, no refetch
 });
+
+/* ---------------- Groups ---------------- */
+$("group-filter").addEventListener("change", (e) => {
+  state.group = e.target.value;
+  renderTable();
+});
+$("btn-groups").addEventListener("click", openGroupsModal);
+
+function openGroupsModal() {
+  renderGroupsList();
+  openModal("modal-groups");
+}
+
+function renderGroupsList() {
+  const wrap = $("groups-list");
+  if (state.groups.length === 0) {
+    wrap.innerHTML = `<div class="ps-empty">No groups yet. Create one below.</div>`;
+    return;
+  }
+  wrap.innerHTML = state.groups.map(g => `
+    <div class="ps-group-row">
+      <span class="ps-tag group">${esc(g.name)}</span>
+      <span class="dim">${g.profile_count} profiles</span>
+      ${g.remark ? `<span class="dim">${esc(g.remark)}</span>` : ""}
+      <span style="flex:1"></span>
+      <button class="ps-btn danger sm" data-group-del="${esc(g.name)}">Delete</button>
+    </div>`).join("");
+  wrap.querySelectorAll("[data-group-del]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const name = btn.dataset.groupDel;
+      if (!confirm(`Delete group "${name}"? Its profiles become ungrouped.`)) return;
+      try {
+        await api.deleteGroup(name);
+        toast(`Group "${name}" deleted`, "success");
+        await refreshGroups();
+        await refreshProfiles();
+        renderGroupsList();
+      } catch (e) { toast("Delete failed: " + (e.message || e), "error"); }
+    });
+  });
+}
+
+async function onGroupCreate(e) {
+  e.preventDefault();
+  const name = $("group-name").value.trim();
+  const remark = $("group-remark").value.trim();
+  if (!name) { toast("Group name is required", "error"); return; }
+  try {
+    await api.createGroup({ name, remark: remark || null });
+    toast(`Group "${name}" created`, "success");
+    $("group-name").value = "";
+    $("group-remark").value = "";
+    await refreshGroups();
+    renderGroupsList();
+  } catch (e) { toast("Create failed: " + (e.message || e), "error"); }
+}
 
 /* ---------------- Sync modal ---------------- */
 function syncProfileOptions(exclude) {
@@ -1054,5 +1152,8 @@ $("btn-rpa-create").addEventListener("click", async () => {
   if (logoutBtn) logoutBtn.addEventListener("click", logout);
   await requireAuth();  // redirects to /login when there is no valid session
   try { state.proxies = await api.listProxies(); } catch { /* non-fatal */ }
+  await refreshGroups();
   await refreshProfiles();
+  const gf = $("form-group-new");
+  if (gf) gf.addEventListener("submit", onGroupCreate);
 })();

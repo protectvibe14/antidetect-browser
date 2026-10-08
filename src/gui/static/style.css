@@ -202,6 +202,10 @@ button { font-family: inherit; }
 .ps-name-row { display: flex; align-items: center; gap: 10px; }
 .ps-tag { display: inline-block; font-size: 10.5px; color: var(--lilac); background: var(--violet-dim); border: 1px solid var(--tag-border); padding: 2px 8px; border-radius: 6px; }
 .ps-tag.none { color: var(--dim); background: transparent; border-color: var(--line-soft); }
+.ps-tag.group { color: #4da3ff; background: rgba(77,163,255,.12); border-color: rgba(77,163,255,.35); }
+.ps-groups-list { display: flex; flex-direction: column; gap: 8px; max-height: 260px; overflow-y: auto; }
+.ps-group-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line-soft); border-radius: 8px; }
+.ps-select { font-size: 12px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line-soft); background: var(--bg-soft); color: var(--text); }
 .ps-os { font-size: 11px; font-weight: 600; color: var(--lilac); background: var(--violet-dim); padding: 3px 9px; border-radius: 6px; text-transform: capitalize; }
 .ps-proxy { display: flex; align-items: center; gap: 6px; font-size: 12px; font-family: var(--font-mono); }
 .ps-proxy .ps-proxy-ic { color: var(--mint); }

@@ -288,11 +288,24 @@ class ProfileManager:
                 conn.execute("ALTER TABLE profiles ADD COLUMN template TEXT")
             if "engine" not in existing:
                 conn.execute("ALTER TABLE profiles ADD COLUMN engine TEXT")
+            if "group_name" not in existing:
+                conn.execute("ALTER TABLE profiles ADD COLUMN group_name TEXT")
             # Legacy rows predate the engine column: they were all
             # camoufox profiles.
             conn.execute(
                 "UPDATE profiles SET engine = 'camoufox' "
                 "WHERE engine IS NULL OR engine = ''"
+            )
+            # Groups table (AdsPower-style profile organization).
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS groups (
+                    name TEXT PRIMARY KEY,
+                    remark TEXT,
+                    created_at TEXT,
+                    created_by TEXT
+                )
+                """
             )
 
     def _insert(self, persona):
@@ -348,6 +361,8 @@ class ProfileManager:
         persona["engine"] = (row["engine"]
                              if "engine" in keys and row["engine"]
                              else "camoufox")
+        persona["group_name"] = (row["group_name"]
+                                 if "group_name" in keys else None)
         return persona
 
     def create(self, name, os="windows", proxy=None, client_tag=None,
@@ -533,5 +548,89 @@ class ProfileManager:
             rows = conn.execute(
                 "SELECT * FROM profiles WHERE client_tag = ? ORDER BY name",
                 (tag,),
+            ).fetchall()
+        return [self._row_to_persona(row) for row in rows]
+
+    # ------------------------------------------------------------------
+    # Groups (AdsPower-style profile organization)
+    # ------------------------------------------------------------------
+
+    def create_group(self, name, remark=None, created_by=None):
+        """Create a new profile group."""
+        if not name or not name.strip():
+            raise ValueError("group name must be a non-empty string")
+        name = name.strip()
+        try:
+            with self._connect() as conn:
+                conn.execute(
+                    "INSERT INTO groups (name, remark, created_at, created_by)"
+                    " VALUES (?, ?, ?, ?)",
+                    (name, remark,
+                     datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                     created_by),
+                )
+        except sqlite3.IntegrityError:
+            raise ValueError("group '%s' already exists" % name)
+        return {"name": name, "remark": remark}
+
+    def list_groups(self):
+        """Return all groups with profile counts, ordered by name."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT g.name, g.remark, g.created_at, g.created_by,
+                       COUNT(p.name) AS profile_count
+                FROM groups g
+                LEFT JOIN profiles p ON p.group_name = g.name
+                GROUP BY g.name
+                ORDER BY g.name
+                """
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def update_group(self, name, remark=None):
+        """Update a group's remark."""
+        with self._connect() as conn:
+            cur = conn.execute(
+                "UPDATE groups SET remark = ? WHERE name = ?",
+                (remark, name),
+            )
+            if cur.rowcount == 0:
+                raise ValueError("group '%s' not found" % name)
+
+    def delete_group(self, name):
+        """Delete a group; profiles in it become ungrouped."""
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE profiles SET group_name = NULL WHERE group_name = ?",
+                (name,),
+            )
+            cur = conn.execute("DELETE FROM groups WHERE name = ?", (name,))
+            if cur.rowcount == 0:
+                raise ValueError("group '%s' not found" % name)
+
+    def assign_group(self, profile_name, group_name):
+        """Assign a profile to a group (None to ungroup)."""
+        if group_name is not None:
+            with self._connect() as conn:
+                exists = conn.execute(
+                    "SELECT 1 FROM groups WHERE name = ?", (group_name,)
+                ).fetchone()
+            if not exists:
+                raise ValueError("group '%s' not found" % group_name)
+        with self._connect() as conn:
+            cur = conn.execute(
+                "UPDATE profiles SET group_name = ? WHERE name = ?",
+                (group_name, profile_name),
+            )
+            if cur.rowcount == 0:
+                raise ValueError("profile '%s' not found" % profile_name)
+
+    def list_by_group(self, group_name):
+        """Return all personas in a group, ordered by name."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM profiles WHERE group_name = ? ORDER BY name",
+                (group_name,),
             ).fetchall()
         return [self._row_to_persona(row) for row in rows]

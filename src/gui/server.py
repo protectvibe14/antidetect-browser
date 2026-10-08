@@ -285,6 +285,7 @@ class ProfileUpdate(BaseModel):
     os: str | None = None
     engine: str | None = None
     proxy_name: str | None = None  # set to "" to detach proxy
+    group_name: str | None = None  # set to "" or null to ungroup
     timezone: str | None = None
     locale: str | None = None
     user_agent: str | None = None
@@ -631,6 +632,15 @@ def create_app() -> FastAPI:
                 except KeyError:
                     raise HTTPException(
                         400, "unknown proxy_name '%s'" % body.proxy_name)
+        if body.group_name is not None:
+            group_name = body.group_name.strip() or None
+            if group_name is not None:
+                try:
+                    _profile_manager.assign_group(name, group_name)
+                except ValueError as exc:
+                    raise HTTPException(400, str(exc))
+            else:
+                _profile_manager.assign_group(name, None)
         # Fingerprint fields.
         for key in ("timezone", "locale", "user_agent", "platform",
                     "webgl_vendor", "webgl_renderer", "hardware_concurrency",
@@ -701,6 +711,56 @@ def create_app() -> FastAPI:
             raise HTTPException(404, "no profile named '%s'" % name)
         _profile_manager.delete(name)
         return {"deleted": True}
+
+    # ------------------------------------------------------------------
+    # Groups (AdsPower-style profile organization)
+    # ------------------------------------------------------------------
+    @app.get("/api/groups")
+    def list_groups():
+        """List all groups with profile counts."""
+        return {"groups": _profile_manager.list_groups()}
+
+    @app.post("/api/groups", status_code=201)
+    def create_group(payload: dict):
+        """Create a new profile group."""
+        name = (payload.get("name") or "").strip()
+        if not name:
+            raise HTTPException(400, "group name is required")
+        try:
+            group = _profile_manager.create_group(
+                name,
+                remark=payload.get("remark"),
+            )
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+        return group
+
+    @app.put("/api/groups/{name}")
+    def update_group(name: str, payload: dict):
+        """Update a group's remark."""
+        try:
+            _profile_manager.update_group(name, remark=payload.get("remark"))
+        except ValueError as exc:
+            raise HTTPException(404, str(exc))
+        return {"updated": True}
+
+    @app.delete("/api/groups/{name}")
+    def delete_group(name: str):
+        """Delete a group; its profiles become ungrouped."""
+        try:
+            _profile_manager.delete_group(name)
+        except ValueError as exc:
+            raise HTTPException(404, str(exc))
+        return {"deleted": True}
+
+    @app.post("/api/profiles/{name}/group")
+    def assign_profile_group(name: str, payload: dict):
+        """Assign a profile to a group (null group_name to ungroup)."""
+        try:
+            _profile_manager.assign_group(name, payload.get("group_name"))
+        except ValueError as exc:
+            raise HTTPException(404, str(exc))
+        return {"assigned": True}
 
     @app.post("/api/profiles/{name}/launch")
     def launch_profile_endpoint(name: str):

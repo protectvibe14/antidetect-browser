@@ -74,6 +74,10 @@
           <span class="ps-search-ic">&#8981;</span>
           <input id="search" type="text" placeholder="Search profiles, tags&hellip;" autocomplete="off" aria-label="Search profiles">
         </div>
+        <select id="group-filter" class="ps-select" aria-label="Filter by group" title="Filter by group">
+          <option value="">All groups</option>
+        </select>
+        <button class="ps-btn ghost sm" id="btn-groups" title="Manage groups">&#128193; Groups</button>
         <div class="ps-crumb" id="crumb"><span>&#128193;</span> <span id="crumb-tag">All profiles</span></div>
         <div style="flex:1"></div>
         <span id="refresh-note" class="ps-refresh-note"></span>
@@ -84,12 +88,12 @@
           <table class="ps-table">
             <thead>
               <tr>
-                <th>Status</th><th>Name</th><th>Client tag</th><th>OS</th>
+                <th>Status</th><th>Name</th><th>Group</th><th>Client tag</th><th>OS</th>
                 <th>Proxy</th><th>Last used</th><th style="text-align:right">Actions</th>
               </tr>
             </thead>
             <tbody id="profiles-body">
-              <tr><td colspan="7"><div class="ps-empty">Loading profiles&hellip;</div></td></tr>
+              <tr><td colspan="8"><div class="ps-empty">Loading profiles&hellip;</div></td></tr>
             </tbody>
           </table>
         </div>
@@ -178,6 +182,10 @@
           <div class="ps-field">
             <label class="ps-flabel" for="edit-tag">Client tag <span class="ps-flabel-hint">(remark)</span></label>
             <input class="ps-in" id="edit-tag" type="text" placeholder="e.g. acme">
+          </div>
+          <div class="ps-field">
+            <label class="ps-flabel" for="edit-group">Group</label>
+            <select class="ps-in" id="edit-group"><option value="">Ungrouped</option></select>
           </div>
         </div>
         <div class="ps-tabpane" data-pane="proxy">
@@ -343,6 +351,32 @@
           <button type="submit" class="ps-btn primary">Import</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- ================= Groups modal ================= -->
+  <div id="modal-groups" class="ps-overlay center" hidden>
+    <div class="ps-modal ps-pop">
+      <div class="ps-drawer-h">
+        <div><div class="ps-eyebrow">Organize</div><div class="ps-drawer-title">Profile groups</div></div>
+        <button class="ps-x" data-close aria-label="Close">&#10005;</button>
+      </div>
+      <div class="ps-form">
+        <div id="groups-list" class="ps-groups-list"></div>
+        <form id="form-group-new" class="ps-form" style="margin-top:12px">
+          <div class="ps-field">
+            <label class="ps-flabel" for="group-name">New group name</label>
+            <input class="ps-in" id="group-name" type="text" placeholder="e.g. Clients" required maxlength="64">
+          </div>
+          <div class="ps-field">
+            <label class="ps-flabel" for="group-remark">Remark (optional)</label>
+            <input class="ps-in" id="group-remark" type="text" placeholder="Optional note" maxlength="200">
+          </div>
+          <div class="ps-modal-foot">
+            <button type="submit" class="ps-btn primary">Create group</button>
+          </div>
+        </form>
+      </div>
     </div>
   </div>
 
