@@ -517,6 +517,24 @@ class PatchrightEngine(Engine):
         # Platform is not a context option, and patchright's add_init_script
         # is a no-op in this build: use best-effort page-level injection.
         install_platform_spoof(context, profile["platform"])
+        # Fingerprint noise (fingerprint-toolkit, MIT): canvas/WebGL/audio
+        # spoofing injected at page level, deterministic per profile.
+        try:
+            from src.fingerprint.noise import injection_script
+            _noise_js = injection_script(profile["name"])
+            _orig_new_page = context.new_page
+
+            def _new_page_with_noise(*a, **kw):
+                pg = _orig_new_page(*a, **kw)
+                try:
+                    pg.add_init_script(_noise_js)
+                except Exception:
+                    pass
+                return pg
+
+            context.new_page = _new_page_with_noise
+        except Exception:
+            pass
         try:
             page = context.new_page()
         except Exception:
