@@ -1120,8 +1120,8 @@ function fillEditForm(prof) {
     ["Client tag", prof.client_tag || ""],
     ["Last used", prof.last_used || "never"],
   ];
-  $("edit-overview").innerHTML = '<div class="ps-kv">' + rows.map(([k, v]) =>
-    `<div class="ps-kv-row"><div class="ps-kv-k">${esc(k)}</div><div class="ps-kv-v">${esc(v == null || v === "" ? "\u2014" : String(v))}</div></div>`).join("") + "</div>";
+  $("edit-overview").innerHTML = rows.map(([k, v]) =>
+    `<div class="ps-ov-row"><span class="k">${esc(k)}</span><span class="v" title="${esc(v == null || v === "" ? "—" : String(v))}">${esc(v == null || v === "" ? "—" : String(v))}</span></div>`).join("");
 }
 
 async function submitEdit(e) {

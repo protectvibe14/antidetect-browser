@@ -240,6 +240,17 @@ button { font-family: inherit; }
   background: var(--bg2); border: 1px solid var(--line); border-radius: 16px;
 }
 .ps-modal-wide { width: 640px; }
+.ps-modal-edit { width: 900px; max-width: 96vw; }
+.ps-edit-wrap { display: flex; gap: 0; }
+.ps-edit-main { flex: 1; min-width: 0; padding: 0 22px; }
+.ps-edit-side {
+  width: 260px; flex-shrink: 0; border-left: 1px solid var(--line);
+  padding: 18px; background: var(--bg); border-radius: 0 0 16px 0;
+}
+.ps-edit-side h4 { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: var(--dim); margin: 0 0 10px; }
+.ps-ov-row { display: flex; justify-content: space-between; font-size: 12px; padding: 5px 0; border-bottom: 1px solid var(--line-soft); }
+.ps-ov-row .k { color: var(--dim); }
+.ps-ov-row .v { color: var(--text); text-align: right; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ps-pop { animation: pop .2s cubic-bezier(.2,.7,.3,1); }
 .ps-drawer-h {
   display: flex; align-items: flex-start; justify-content: space-between;
