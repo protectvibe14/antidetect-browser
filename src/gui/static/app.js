@@ -235,7 +235,8 @@ function renderStats() {
 function statusCell(p) {
   const st = p.status || "stopped";
   const label = st.charAt(0).toUpperCase() + st.slice(1);
-  return `<span class="ps-status-dot ${esc(st)}"></span><span class="ps-status-label">${esc(label)}</span>`;
+  const err = p.error ? ` <span class="ps-error" title="${esc(p.error)}">⚠ ${esc(p.error.slice(0, 60))}</span>` : "";
+  return `<span class="ps-status-dot ${esc(st)}"></span><span class="ps-status-label">${esc(label)}</span>${err}`;
 }
 
 function renderTable() {

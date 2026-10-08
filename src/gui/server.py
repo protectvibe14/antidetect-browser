@@ -162,6 +162,7 @@ def _profile_view(persona):
         entry = _running.get(persona["name"])
         status = entry["status"] if entry is not None else "stopped"
         last_used = _last_used.get(persona["name"])
+        error = entry.get("error") if entry is not None else None
     proxy = persona.get("proxy") or {}
     if proxy.get("name"):
         proxy_label = proxy["name"]
@@ -177,6 +178,7 @@ def _profile_view(persona):
         "proxy_label": proxy_label,
         "status": status,
         "last_used": last_used,
+        "error": error,
     }
 
 
