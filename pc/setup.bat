@@ -25,7 +25,8 @@ py --version
 
 echo.
 echo  [2/5] Virtual environment bana rahe hain...
-if not exist .venv (
+if not exist ".venv\Scripts\activate.bat" (
+    if exist ".venv" rmdir /s /q ".venv"
     py -m venv .venv
 )
 call .venv\Scripts\activate.bat
