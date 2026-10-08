@@ -9,7 +9,7 @@ Invoke-WebRequest -Uri "https://github.com/protectvibe14/antidetect-browser/arch
 ```
 
 Ye karega:
-1. Project download (GitHub se)
+1. Project download
 2. Python check/install
 3. Saari libraries install
 4. **Camoufox browser** download (~1GB)
@@ -19,16 +19,17 @@ Time: internet speed pe depend, 10–30 min lag sakte hain pehli dafa.
 
 ## Roz chalana
 
-`antidetect-browser-main\pc\run.bat` pe double-click karo.
+`antidetect-browser-main\pc\run.bat` pe **double-click** karo.
 Browser mein kholo: **http://127.0.0.1:8765**
 
 Pehli dafa ek **admin login** banega — username/password black window mein print hoga. Usay kahin likh lo.
 
-## Update karna (naya code aane pe)
+## Update karna (1 click!)
 
-`pc\update.bat` chalao.
+Jab bhi main naya code dun: `pc\update.bat` pe **double-click** karo.
+Khud download karega, khud apply karega. Tumhara data (profiles, logins, settings) **mehfooz** rahega — sirf code update hoga.
 
-## Testing checklist (tumhare liye)
+## Testing checklist
 
 1. **Naya profile banao** → Launch → Gmail login karo → browser band karo → dobara Launch → login **barkarar** hona chahiye
 2. **2–3 profiles** alag alag banao, har ek mein alag site kholo
