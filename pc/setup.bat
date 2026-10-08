@@ -10,7 +10,7 @@ echo.
 echo  [1/5] Python check kar rahe hain...
 py --version >nul 2>&1
 if errorlevel 1 (
-    echo  Python nahi mila. Install ho raha hai (winget)...
+    echo  Python nahi mila. Install ho raha hai...
     winget install Python.Python.3.12 -e --silent --accept-source-agreements --accept-package-agreements
     if errorlevel 1 (
         echo  ERROR: Python install nahi hua. https://www.python.org/downloads/ se manually install karein.
@@ -50,7 +50,7 @@ if errorlevel 1 (
 REM --- Patchright Chromium (Node chahiye driver ke liye) ---
 where node >nul 2>&1
 if errorlevel 1 (
-    echo  Node.js nahi mila (Patchright ke liye chahiye). Install ho raha hai...
+    echo  Node.js nahi mila. Install ho raha hai...
     winget install OpenJS.NodeJS.LTS -e --silent --accept-source-agreements --accept-package-agreements
 )
 set PYTHONPATH=%CD%\vendor

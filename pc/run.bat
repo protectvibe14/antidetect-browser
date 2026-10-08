@@ -6,7 +6,7 @@ setlocal
 cd /d "%~dp0\.."
 
 if not exist .venv (
-    echo  Pehle pc\setup.bat chalao (one-time setup).
+    echo  Pehle pc\setup.bat chalao - one-time setup.
     pause
     exit /b 1
 )
