@@ -348,6 +348,75 @@ def cmd_proxy_test(args):
 
 
 # --------------------------------------------------------------------------- #
+# migrate / cookie commands (Phase 5)
+# --------------------------------------------------------------------------- #
+
+def cmd_import_from(args):
+    """Import profiles from an AdsPower/GoLogin/Multilogin JSON export."""
+    try:
+        from src.migrate import (import_adspower, import_gologin,
+                                  detect_source)
+    except Exception as exc:
+        _fail("migrate module unavailable: %s" % exc)
+    source = (args.source or "auto").lower()
+    if source == "auto":
+        try:
+            with open(args.file, encoding="utf-8") as fh:
+                source = detect_source(json.load(fh))
+        except Exception as exc:
+            _fail("cannot read '%s': %s" % (args.file, exc))
+    importer = import_gologin if source == "gologin" else import_adspower
+    try:
+        result = importer(args.file)
+    except Exception as exc:
+        _fail("import failed: %s" % exc)
+    created = result.get("created", 0)
+    skipped = result.get("skipped", []) or []
+    errors = result.get("errors", []) or []
+    print("imported %d profile(s) [%s]" % (created, source))
+    if skipped:
+        print("skipped (duplicates): %s" % ", ".join(skipped))
+    for err in errors:
+        if isinstance(err, dict):
+            print("error [%s]: %s" % (err.get("name", "?"),
+                                      err.get("error", "?")))
+        else:
+            print("error: %s" % err)
+
+
+def cmd_cookies_export(args):
+    """Export a profile's live cookie jar to a file."""
+    try:
+        from src.cookies.manager import export_cookies
+    except Exception as exc:
+        _fail("cookies module unavailable: %s" % exc)
+    try:
+        result = export_cookies(args.profile, fmt=args.format)
+    except Exception as exc:
+        _fail("cookie export failed: %s" % exc)
+    if isinstance(result, dict) and result.get("error"):
+        _fail(result["error"])
+    print("exported cookies for '%s' to %s" % (args.profile, result))
+
+
+def cmd_cookies_import(args):
+    """Import cookies from a file into a profile's cookie jar."""
+    try:
+        from src.cookies.manager import import_cookies
+    except Exception as exc:
+        _fail("cookies module unavailable: %s" % exc)
+    try:
+        result = import_cookies(args.profile, args.file, clear=args.clear)
+    except Exception as exc:
+        _fail("cookie import failed: %s" % exc)
+    if result.get("error"):
+        _fail(result["error"])
+    print("imported %d cookie(s) into '%s'%s"
+          % (result.get("imported", 0), args.profile,
+             " (jar cleared first)" if args.clear else ""))
+
+
+# --------------------------------------------------------------------------- #
 # health / setup commands
 # --------------------------------------------------------------------------- #
 
@@ -490,6 +559,35 @@ def build_parser():
     x_test = x_subs.add_parser("test", help="test proxy reachability")
     x_test.add_argument("--name", required=True)
     x_test.set_defaults(func=cmd_proxy_test)
+
+    # migrate ----------------------------------------------------------- #
+    p_import = subs.add_parser(
+        "import-from",
+        help="import profiles from an AdsPower/GoLogin/Multilogin JSON export")
+    p_import.add_argument("file", help="JSON export file (AdsPower Local API "
+                                       "dump, a list, or a single profile)")
+    p_import.add_argument("--source", choices=["auto", "adspower", "gologin"],
+                          default="auto",
+                          help="export origin (auto-detects by default)")
+    p_import.set_defaults(func=cmd_import_from)
+
+    # cookies ------------------------------------------------------------- #
+    p_cookies = subs.add_parser("cookies", help="import/export profile cookies")
+    p_cookies.add_argument("profile", help="profile name")
+    c_subs = p_cookies.add_subparsers(dest="cookies_cmd", required=True)
+
+    c_export = c_subs.add_parser("export", help="export a profile's cookies")
+    c_export.add_argument("--format",
+                          choices=["cookie-editor", "netscape", "playwright"],
+                          default="cookie-editor",
+                          help="output format (default: cookie-editor JSON)")
+    c_export.set_defaults(func=cmd_cookies_export)
+
+    c_import = c_subs.add_parser("import", help="import cookies into a profile")
+    c_import.add_argument("file", help="cookie file (format auto-detected)")
+    c_import.add_argument("--clear", action="store_true",
+                          help="empty the jar before importing")
+    c_import.set_defaults(func=cmd_cookies_import)
 
     # health ------------------------------------------------------------ #
     p_health = subs.add_parser("health", help="profile health checks")

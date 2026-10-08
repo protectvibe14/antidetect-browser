@@ -52,6 +52,7 @@
         <div style="flex:1"></div>
         <button class="ps-btn ghost" id="btn-sync"><span class="ps-btn-ic">&#8646;</span> Sync</button>
         <button class="ps-btn ghost" id="btn-bulk"><span class="ps-btn-ic">&#8681;</span> Bulk Import</button>
+        <button class="ps-btn ghost" id="btn-import"><span class="ps-btn-ic">&#8678;</span> Import</button>
         <button class="ps-btn primary" id="btn-new"><span class="ps-btn-ic">+</span> New Profile</button>
       </div>
 
@@ -186,6 +187,72 @@
           <button type="submit" class="ps-btn primary" id="btn-sync-start">Start sync</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- ================= Migrate-import modal ================= -->
+  <div id="modal-migrate" class="ps-overlay center" hidden>
+    <div class="ps-modal ps-pop">
+      <div class="ps-drawer-h">
+        <div><div class="ps-eyebrow">Migrate</div><div class="ps-drawer-title">Import from another browser</div></div>
+        <button class="ps-x" data-close aria-label="Close">&#10005;</button>
+      </div>
+      <form id="form-migrate" class="ps-form">
+        <div class="ps-field">
+          <label class="ps-flabel" for="migrate-file">JSON export file</label>
+          <input class="ps-in" id="migrate-file" type="file" accept=".json,application/json" required>
+        </div>
+        <div class="ps-field">
+          <label class="ps-flabel" for="migrate-source">Source <span class="ps-flabel-hint">(both use the same tolerant field matching)</span></label>
+          <select class="ps-in" id="migrate-source">
+            <option value="adspower">AdsPower</option>
+            <option value="gologin">GoLogin / Multilogin</option>
+          </select>
+        </div>
+        <div id="migrate-result" class="ps-bulk-result" hidden></div>
+        <div class="ps-modal-foot">
+          <button type="button" class="ps-btn ghost" data-close>Cancel</button>
+          <button type="submit" class="ps-btn primary">Import</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ================= Cookies modal ================= -->
+  <div id="modal-cookies" class="ps-overlay center" hidden>
+    <div class="ps-modal ps-pop">
+      <div class="ps-drawer-h">
+        <div><div class="ps-eyebrow">Session</div><div class="ps-drawer-title" id="ck-title">Cookies</div></div>
+        <button class="ps-x" data-close aria-label="Close">&#10005;</button>
+      </div>
+      <div class="ps-form">
+        <div class="ps-field">
+          <label class="ps-flabel" for="ck-fmt">Export format</label>
+          <select class="ps-in" id="ck-fmt">
+            <option value="cookie-editor">Cookie-Editor JSON</option>
+            <option value="playwright">Playwright storage-state</option>
+            <option value="netscape">Netscape cookies.txt</option>
+          </select>
+        </div>
+        <div class="ps-field">
+          <button type="button" class="ps-btn ghost" id="btn-ck-export">&#8681; Export cookies</button>
+        </div>
+        <div class="ps-field">
+          <label class="ps-flabel" for="ck-file">Import cookie file <span class="ps-flabel-hint">(format auto-detected)</span></label>
+          <input class="ps-in" id="ck-file" type="file" accept=".json,.txt">
+        </div>
+        <label class="ps-check">
+          <input type="checkbox" id="ck-clear">
+          <span class="ps-check-name">Clear existing cookies before import</span>
+        </label>
+        <div class="ps-field">
+          <button type="button" class="ps-btn ghost" id="btn-ck-import">&#8679; Import cookies</button>
+        </div>
+        <div id="ck-result" class="ps-bulk-result" hidden></div>
+        <div class="ps-modal-foot">
+          <button type="button" class="ps-btn ghost" data-close>Close</button>
+        </div>
+      </div>
     </div>
   </div>
 

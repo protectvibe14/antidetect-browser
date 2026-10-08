@@ -46,6 +46,21 @@ const api = {
     if (clientTag) fd.append("client_tag", clientTag);
     return req("POST", "/api/bulk/import", fd, { raw: true });
   },
+  migrateImport: (file, source) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    if (source) fd.append("source", source);
+    return req("POST", "/api/migrate/adspower", fd, { raw: true });
+  },
+  cookiesExport: (profile, fmt) =>
+    req("POST", "/api/cookies/export", JSON.stringify({ profile, fmt })),
+  cookiesImport: (file, profile, clear) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("profile", profile);
+    fd.append("clear", clear ? "true" : "false");
+    return req("POST", "/api/cookies/import", fd, { raw: true });
+  },
   syncStart: (p) => req("POST", "/api/sync/start", JSON.stringify(p)),
   syncStop: (id) => req("POST", "/api/sync/stop", JSON.stringify({ session_id: id })),
   syncStatus: (id) => req("GET", "/api/sync/status" + (id ? "?session_id=" + encodeURIComponent(id) : "")),
@@ -202,6 +217,7 @@ function renderTable() {
       <td><div class="ps-actions">
         ${launchBtn}
         <button class="ps-btn ghost sm" data-act="health">&#10003; Health</button>
+        <button class="ps-btn ghost sm" data-act="cookies">&#127850; Cookies</button>
         <button class="ps-btn danger sm" data-act="delete">&#10005;</button>
       </div></td>
     </tr>`;
@@ -235,6 +251,9 @@ async function onAction(name, act) {
       toast(`Deleted "${name}".`, "success");
     } else if (act === "health") {
       openHealth(name);
+      return; // no immediate refresh needed
+    } else if (act === "cookies") {
+      openCookies(name);
       return; // no immediate refresh needed
     }
     await refreshProfiles();
@@ -364,6 +383,86 @@ $("form-bulk").addEventListener("submit", async (e) => {
   }
 });
 
+/* ---------------- Migrate import (AdsPower / GoLogin / Multilogin) ---------------- */
+$("form-migrate").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const file = $("migrate-file").files[0];
+  if (!file) { toast("Choose a JSON export file first.", "error"); return; }
+  const source = $("migrate-source").value;
+  const box = $("migrate-result");
+  box.hidden = false;
+  box.innerHTML = "Importing&hellip;";
+  try {
+    const res = await api.migrateImport(file, source);
+    const created = res.created || 0;
+    const skipped = Array.isArray(res.skipped) ? res.skipped : [];
+    const errors = Array.isArray(res.errors) ? res.errors : [];
+    box.innerHTML =
+      `<span class="ok">Created: ${created}</span> &middot; ` +
+      `<span class="warn">Skipped (duplicates): ${skipped.length}</span> &middot; ` +
+      `<span class="${errors.length ? "err" : ""}">Errors: ${errors.length}</span>` +
+      (skipped.length
+        ? `<ul>${skipped.slice(0, 12).map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : "") +
+      (errors.length
+        ? `<ul>${errors.slice(0, 12).map(x => `<li>${esc(typeof x === "string" ? x : JSON.stringify(x))}</li>`).join("")}` +
+          (errors.length > 12 ? `<li>&hellip;and ${errors.length - 12} more</li>` : "") + `</ul>`
+        : "");
+    toast(`Import done: ${created} created, ${skipped.length} skipped, ${errors.length} errors.`,
+      errors.length ? "info" : "success");
+    await refreshProfiles();
+  } catch (err) {
+    box.innerHTML = `<span class="err">Import failed: ${esc(err.message || err)}</span>`;
+    toast("Import failed: " + (err.message || err), "error");
+  }
+});
+
+/* ---------------- Cookies modal ---------------- */
+state.cookiesProfile = null;
+
+function openCookies(name) {
+  state.cookiesProfile = name;
+  $("ck-title").textContent = "Cookies — " + name;
+  $("ck-result").hidden = true;
+  $("ck-result").innerHTML = "";
+  $("ck-file").value = "";
+  openModal("modal-cookies");
+}
+
+$("btn-ck-export").addEventListener("click", async () => {
+  const name = state.cookiesProfile;
+  if (!name) return;
+  const box = $("ck-result");
+  box.hidden = false;
+  box.innerHTML = "Launching profile headless&hellip;";
+  try {
+    const res = await api.cookiesExport(name, $("ck-fmt").value);
+    box.innerHTML = `<span class="ok">Exported to:</span> <span class="ps-mono">${esc(res.path || "")}</span>`;
+    toast(`Cookies exported for "${name}".`, "success");
+  } catch (err) {
+    box.innerHTML = `<span class="err">Export failed: ${esc(err.message || err)}</span>`;
+    toast("Cookie export failed: " + (err.message || err), "error");
+  }
+});
+
+$("btn-ck-import").addEventListener("click", async () => {
+  const name = state.cookiesProfile;
+  if (!name) return;
+  const file = $("ck-file").files[0];
+  if (!file) { toast("Choose a cookie file first.", "error"); return; }
+  const clear = $("ck-clear").checked;
+  const box = $("ck-result");
+  box.hidden = false;
+  box.innerHTML = "Launching profile headless&hellip;";
+  try {
+    const res = await api.cookiesImport(file, name, clear);
+    box.innerHTML = `<span class="ok">Imported ${res.imported || 0} cookie(s) into "${esc(name)}".</span>`;
+    toast(`Imported ${res.imported || 0} cookie(s) into "${name}".`, "success");
+  } catch (err) {
+    box.innerHTML = `<span class="err">Import failed: ${esc(err.message || err)}</span>`;
+    toast("Cookie import failed: " + (err.message || err), "error");
+  }
+});
+
 /* ---------------- Health modal ---------------- */
 async function openHealth(name) {
   $("health-title").textContent = name;
@@ -436,6 +535,11 @@ $("btn-bulk").addEventListener("click", () => {
   $("bulk-result").hidden = true;
   $("bulk-result").innerHTML = "";
   openModal("modal-bulk");
+});
+$("btn-import").addEventListener("click", () => {
+  $("migrate-result").hidden = true;
+  $("migrate-result").innerHTML = "";
+  openModal("modal-migrate");
 });
 $("search").addEventListener("input", (e) => {
   state.query = e.target.value.trim();

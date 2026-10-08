@@ -160,6 +160,13 @@ class SyncStart(BaseModel):
     typing: bool = True
 
 
+class CookieExportRequest(BaseModel):
+    """Body for POST /api/cookies/export."""
+
+    profile: str
+    fmt: str = "cookie-editor"  # cookie-editor | netscape | playwright
+
+
 class SyncStop(BaseModel):
     """Body for POST /api/sync/stop."""
 
@@ -423,6 +430,87 @@ def create_app() -> FastAPI:
         return {"created": result.get("created", 0),
                 "skipped": result.get("skipped", []),
                 "errors": result.get("errors", [])}
+
+    # -- migration: import profiles from other anti-detect browsers -------
+    @app.post("/api/migrate/adspower")
+    async def migrate_adspower_endpoint(file: UploadFile = File(...),
+                                       source: str | None = Form(None)):
+        """Import profiles from an AdsPower/GoLogin/Multilogin JSON export.
+
+        ``file`` is the JSON upload (a dump of the AdsPower Local API
+        ``{"data": {"list": [...]}}`` response, a plain list, or a
+        hand-built file). ``source`` (optional form field, ``"adspower"``
+        or ``"gologin"``) selects the importer; both share the same
+        tolerant field aliasing, the choice only documents intent.
+        """
+        from src.migrate import import_adspower, import_gologin
+        data = await file.read()
+        tmp_path = None
+        try:
+            import tempfile
+            fd, tmp_path = tempfile.mkstemp(suffix=".json",
+                                            prefix="gui-migrate-")
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(data)
+            importer = (import_gologin
+                        if (source or "").lower() == "gologin"
+                        else import_adspower)
+            result = importer(tmp_path)
+        finally:
+            if tmp_path:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+        return {"created": result.get("created", 0),
+                "skipped": result.get("skipped", []),
+                "errors": result.get("errors", [])}
+
+    # -- cookies: import/export a profile's live cookie jar ---------------
+    @app.post("/api/cookies/export")
+    def cookies_export_endpoint(body: CookieExportRequest):
+        """Export a profile's cookies; needs the Camoufox binary.
+
+        Body: ``{"profile": name, "fmt": "cookie-editor"|"netscape"|
+        "playwright"}``. Returns ``{"path": ...}``; the profile is launched
+        headless, so this refuses (409) when the browser binary is missing.
+        """
+        from src.cookies.manager import export_cookies
+        result = export_cookies(body.profile, fmt=body.fmt or "cookie-editor")
+        if isinstance(result, dict) and result.get("error"):
+            raise HTTPException(409, result["error"])
+        return {"path": result}
+
+    @app.post("/api/cookies/import")
+    async def cookies_import_endpoint(file: UploadFile = File(...),
+                                      profile: str = Form(...),
+                                      clear: bool = Form(False)):
+        """Import cookies into a profile's cookie jar.
+
+        ``file`` is the cookie file (Cookie-Editor JSON, Playwright
+        storage-state, or Netscape ``cookies.txt`` — auto-detected);
+        ``profile`` names the target profile; ``clear`` (form bool)
+        empties the jar first when true.
+        """
+        from src.cookies.manager import import_cookies
+        data = await file.read()
+        tmp_path = None
+        try:
+            import tempfile
+            fd, tmp_path = tempfile.mkstemp(suffix=".cookies",
+                                            prefix="gui-cookies-")
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(data)
+            result = import_cookies(profile, tmp_path, clear=bool(clear))
+        finally:
+            if tmp_path:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+        if result.get("error"):
+            raise HTTPException(409, result["error"])
+        return {"imported": result.get("imported", 0)}
 
     # -- frontend statics -------------------------------------------------
     # Mounted LAST so /api/* routes always win. The directory may be empty
