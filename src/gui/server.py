@@ -201,6 +201,7 @@ def _launch_worker(name, persona):
                 entry["status"] = "stopped"
                 entry["launched"] = None
                 entry["error"] = str(exc)[:500]
+        print("[LAUNCH ERROR] profile '%s': %s" % (name, exc))
         return
     with _running_lock:
         entry = _running.get(name)

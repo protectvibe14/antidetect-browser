@@ -44,6 +44,8 @@ if errorlevel 1 (
 echo.
 echo  [4/5] Browsers download ho rahe hain (Camoufox + Chromium)...
 python setup_browser.py
+echo  Fingerprint model download ho raha hai...
+python -c "import sys; sys.path.insert(0, 'vendor'); from camoufox.fpgen_model import ensure_fpgen_model; ensure_fpgen_model(); print('fpgen model ready.')"
 if errorlevel 1 (
     echo  WARNING: Camoufox download mein issue. Internet check karke dobara chalayein.
 )
