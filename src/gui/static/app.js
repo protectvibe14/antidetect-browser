@@ -62,6 +62,8 @@ const api = {
   testProxy: (name) => req("POST", "/api/proxies/" + encodeURIComponent(name) + "/test"),
   fetchFree: (max) => req("POST", "/api/proxies/fetch-free",
     JSON.stringify({ max: max || 20 })),
+  randomUA: (os, browser) =>
+    req("GET", `/api/fingerprint/random-ua?os=${os || "windows"}&browser=${browser || "chrome"}`),
   bulkImportProxies: (text, type) => req("POST", "/api/proxies/bulk-import",
     JSON.stringify({ text, type })),
   listExtensions: (profile) => req("GET",
@@ -496,7 +498,7 @@ function showView(name) {
   window.scrollTo(0, 0);
 }
 
-function initNewProfilePage() {
+async function initNewProfilePage() {
   // Populate group + proxy dropdowns.
   const gsel = $("np-group");
   gsel.innerHTML = `<option value="">Ungrouped</option>` +
@@ -538,6 +540,13 @@ function initNewProfilePage() {
   $("np-remark").oninput = () => {
     $("np-remark-count").textContent = `${$("np-remark").value.length} / 2000`;
   };
+  // Auto-generate a random UA on page open (AdsPower shows a default UA).
+  if (!$("np-ua").value) {
+    try {
+      const r = await api.randomUA(pillVal("np-os") || "linux", "chrome");
+      $("np-ua").value = r.user_agent;
+    } catch (e) { /* leave empty on failure */ }
+  }
   renderNewOverview();
 }
 
@@ -571,6 +580,18 @@ document.querySelectorAll("#new-tabs .ps-tab").forEach(t => {
 $("np-cancel").addEventListener("click", () => showView("profiles"));
 $("np-new-fp").addEventListener("click", () => {
   toast("Fingerprint will be generated on creation", "info");
+});
+// Shuffle: new random UA on every click (AdsPower-style).
+$("np-ua-shuffle").addEventListener("click", async () => {
+  const os = pillVal("np-os") || "windows";
+  const browser = pillVal("np-browser") === "patchright" ? "chrome" : "firefox";
+  try {
+    const r = await api.randomUA(os, browser);
+    $("np-ua").value = r.user_agent;
+    toast("New User-Agent generated", "success");
+  } catch (err) {
+    toast("Failed: " + (err.message || err), "error");
+  }
 });
 
 $("form-new-page").addEventListener("submit", async (e) => {
@@ -1275,8 +1296,7 @@ async function submitEdit(e) {
 async function regenFingerprint() {
   const name = $("edit-name").value;
   if (!confirm(`Regenerate fingerprint for "${name}"? The current fingerprint will be replaced.`)) return;
-  try {
-    await api.updateProfile(name, { regenerate_fingerprint: true });
+  try {    await api.updateProfile(name, { regenerate_fingerprint: true });
     toast("Fingerprint regenerated.", "success");
     const prof = await api.getProfile(name);
     fillEditForm(prof);
@@ -1296,6 +1316,19 @@ document.querySelectorAll("#edit-tabs .ps-tab").forEach(t =>
   }));
 $("form-edit").addEventListener("submit", submitEdit);
 $("edit-regen").addEventListener("click", regenFingerprint);
+// Edit modal UA shuffle (AdsPower-style).
+$("edit-ua-shuffle").addEventListener("click", async () => {
+  const os = $("edit-os").value || "windows";
+  const engine = $("edit-engine").value || "camoufox";
+  const browser = engine === "patchright" ? "chrome" : "firefox";
+  try {
+    const r = await api.randomUA(os, browser);
+    $("edit-ua").value = r.user_agent;
+    toast("New User-Agent generated", "success");
+  } catch (err) {
+    toast("Failed: " + (err.message || err), "error");
+  }
+});
 
 async function openHealth(name) {
   $("health-title").textContent = name;

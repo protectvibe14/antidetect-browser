@@ -1073,6 +1073,42 @@ def create_app() -> FastAPI:
             raise HTTPException(404, "no proxy named '%s'" % name)
         return _proxy_manager.test_with_latency(name)
 
+    @app.get("/api/fingerprint/random-ua")
+    def random_ua(os: str = "windows", browser: str = "chrome"):
+        """Generate a fresh random User-Agent (AdsPower shuffle button).
+
+        Query params: os (windows/macos/linux), browser (chrome/firefox).
+        Returns a new random UA on every call. Chrome versions are picked
+        from recent realistic releases (like AdsPower's kernel list).
+        """
+        import random as _random
+        try:
+            from src.fingerprints.generator import chrome_user_agent
+            rng = _random.Random()
+            os = os if os in ("windows", "macos", "linux") else "windows"
+            if browser == "firefox":
+                rv = rng.randint(120, 135)
+                # Firefox UA templates per OS.
+                ff_templates = {
+                    "windows": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64; "
+                                "rv:{rv}) Gecko/20100101 Firefox/{rv}.0"),
+                    "macos": ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; "
+                              "rv:{rv}) Gecko/20100101 Firefox/{rv}.0"),
+                    "linux": ("Mozilla/5.0 (X11; Linux x86_64; rv:{rv}) "
+                              "Gecko/20100101 Firefox/{rv}.0"),
+                }
+                ua = ff_templates[os].format(rv=rv)
+            else:
+                # Random recent Chrome version (AdsPower-style shuffle).
+                major = rng.choice([131, 132, 133, 134, 135])
+                build = rng.randint(0, 9999)
+                patch = rng.randint(0, 200)
+                version_full = f"{major}.0.{build}.{patch}"
+                ua = chrome_user_agent(os, version_full=version_full)
+            return {"user_agent": ua}
+        except Exception as exc:
+            raise HTTPException(500, "UA generation failed: %s" % exc)
+
     @app.post("/api/proxies/fetch-free")
     def fetch_free_proxies(request: Request, payload: dict = None):
         """Fetch free proxies for TESTING and add working ones.
