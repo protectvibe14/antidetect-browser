@@ -11,6 +11,7 @@ playwright>=1.40
 pytest>=8.0
 pyyaml
 requests
+httpx
 rich
 rich-click
 screeninfo
