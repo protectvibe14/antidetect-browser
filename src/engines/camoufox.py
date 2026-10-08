@@ -31,3 +31,8 @@ class CamoufoxEngine(Engine):
             return bool(launcher.browser_binary_present())
         except Exception:
             return False
+
+    def ensure_binary(self):
+        """Download the Camoufox browser binary if missing (auto-install)."""
+        from src.browser import launcher
+        return launcher.ensure_browser_binary()

@@ -133,6 +133,31 @@ def chromium_binary_present() -> bool:
     return chromium_executable() is not None
 
 
+def ensure_chromium_binary() -> bool:
+    """Download the Patchright Chromium binary if missing (auto-install).
+
+    Returns True when a usable binary exists afterwards.
+    """
+    if chromium_binary_present():
+        return True
+    import subprocess
+    import sys
+    try:
+        subprocess.run(
+            [sys.executable, "-m", "patchright", "install", "chromium",
+             "--only-shell"],
+            check=False, capture_output=True, timeout=1800,
+        )
+        # Full chromium (not just headless shell) for visible launches.
+        subprocess.run(
+            [sys.executable, "-m", "patchright", "install", "chromium"],
+            check=False, capture_output=True, timeout=1800,
+        )
+    except Exception:
+        pass
+    return chromium_binary_present()
+
+
 def install_platform_spoof(context, platform: str) -> None:
     """Install best-effort ``navigator.platform`` spoofing on a context.
 
@@ -469,3 +494,7 @@ class PatchrightEngine(Engine):
     def binary_present(self):
         """True when a Chromium build usable by patchright is installed."""
         return chromium_binary_present()
+
+    def ensure_binary(self):
+        """Download the Chromium binary if missing (auto-install)."""
+        return ensure_chromium_binary()

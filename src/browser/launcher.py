@@ -308,6 +308,27 @@ def browser_binary_present() -> bool:
         return False
 
 
+def ensure_browser_binary() -> bool:
+    """Download the camoufox browser binary if missing (auto-install).
+
+    Returns True when a usable binary exists afterwards.
+    """
+    if browser_binary_present():
+        return True
+    try:
+        from camoufox.pkgman import camoufox_path
+        camoufox_path(download_if_missing=True)
+    except Exception:
+        pass
+    # Also ensure the fpgen fingerprint model is in place.
+    try:
+        from camoufox.fpgen_model import ensure_fpgen_model
+        ensure_fpgen_model()
+    except Exception:
+        pass
+    return browser_binary_present()
+
+
 _VERSION_JSON_NAME = "version.json"
 # Matches a leading "156.0.1" in dir names like "156.0.1-beta.36-72637885".
 _DIR_VERSION_RE = re.compile(r"(\d+)\.(\d+(?:\.\d+)?)")

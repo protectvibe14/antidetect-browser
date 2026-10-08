@@ -234,7 +234,7 @@ function renderStats() {
 
 function statusCell(p) {
   const st = p.status || "stopped";
-  const label = st.charAt(0).toUpperCase() + st.slice(1);
+  const label = st === "downloading" ? "Downloading browser\u2026" : st.charAt(0).toUpperCase() + st.slice(1);
   const err = p.error ? ` <span class="ps-error" title="${esc(p.error)}">⚠ ${esc(p.error.slice(0, 60))}</span>` : "";
   return `<span class="ps-status-dot ${esc(st)}"></span><span class="ps-status-label">${esc(label)}</span>${err}`;
 }
@@ -254,10 +254,11 @@ function renderTable() {
   }
   body.innerHTML = rows.map(p => {
     const name = esc(p.name);
-    const starting = p.status === "starting";
+    const starting = p.status === "starting" || p.status === "downloading";
     const running = p.status === "running";
+    const dl = p.status === "downloading";
     const launchBtn = starting
-      ? `<button class="ps-btn ghost sm" disabled>Starting&hellip;</button>`
+      ? `<button class="ps-btn ghost sm" disabled>${dl ? "Downloading browser&hellip;" : "Starting&hellip;"}</button>`
       : running
         ? `<button class="ps-btn ghost sm" data-act="stop">&#9632; Stop</button>`
         : `<button class="ps-btn primary sm" data-act="launch">&#9654; Launch</button>`;
@@ -652,7 +653,7 @@ function syncProfileOptions(exclude) {
   return state.profiles
     .filter(p => p.name !== exclude)
     .map(p => {
-      const busy = p.status === "running" || p.status === "starting";
+      const busy = p.status === "running" || p.status === "starting" || p.status === "downloading";
       return `<option value="${esc(p.name)}"${busy ? " disabled" : ""}>${esc(p.name)}${busy ? " (running)" : ""}</option>`;
     }).join("");
 }
@@ -675,7 +676,7 @@ function renderSyncFollowers() {
     return;
   }
   box.innerHTML = rows.map(p => {
-    const busy = p.status === "running" || p.status === "starting";
+    const busy = p.status === "running" || p.status === "starting" || p.status === "downloading";
     return `<label class="ps-check${busy ? " off" : ""}">
       <input type="checkbox" value="${esc(p.name)}"${busy ? " disabled" : ""}>
       <span class="ps-check-name">${esc(p.name)}${busy ? " (running)" : ""}</span>
@@ -830,7 +831,7 @@ function renderRpaJobs(jobs) {
           <button class="ps-btn primary" data-rpa-ans="${esc(j.job_id)}">Answer</button>
         </div>
       </div>` : "";
-    const stop = (j.status === "running" || j.status === "starting")
+    const stop = (j.status === "running" || j.status === "starting" || j.status === "downloading")
       ? ` <button class="ps-btn ghost" data-rpa-stop="${esc(j.job_id)}">Stop</button>` : "";
     return `
     <div class="ps-check-row" style="margin:6px 0;padding:6px;border-bottom:1px solid rgba(255,255,255,.06)">

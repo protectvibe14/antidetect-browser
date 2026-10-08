@@ -195,6 +195,7 @@ button { font-family: inherit; }
 .ps-status-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
 .ps-status-dot.running { background: var(--mint); animation: pulsering 2.4s infinite; }
 .ps-status-dot.starting { background: var(--amber); animation: amberpulse 1.2s ease-in-out infinite; }
+.ps-status-dot.downloading { background: var(--amber); animation: amberpulse 0.6s ease-in-out infinite; }
 .ps-status-dot.stopped { background: var(--grey); }
 .ps-status-label { font-size: 11px; color: var(--muted); text-transform: capitalize; margin-left: 8px; }
 .ps-name { font-weight: 600; font-size: 13px; }

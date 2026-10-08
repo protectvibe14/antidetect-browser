@@ -42,3 +42,11 @@ class Engine:
     def binary_present(self):
         """Return True if a browser binary usable by this engine exists."""
         return self.installed_version() is not None
+
+    def ensure_binary(self):
+        """Download the browser binary if missing (auto-install).
+
+        Default: no-op that re-checks presence. Engines override with a real
+        downloader. Returns True when a usable binary exists afterwards.
+        """
+        return self.binary_present()

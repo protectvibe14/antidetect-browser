@@ -193,7 +193,25 @@ def _engine_for(persona):
 def _launch_worker(name, persona):
     """Daemon-thread body: launch the browser, then record the outcome."""
     try:
-        launched = _engine_for(persona).launch_profile(persona, headless=False)
+        engine = _engine_for(persona)
+        # Auto-download the browser binary (and fpgen model) if missing.
+        with _running_lock:
+            entry = _running.get(name)
+            if entry is not None and entry["status"] == "downloading":
+                pass  # status already set by the endpoint
+        if not engine.binary_present():
+            print("[DOWNLOAD] browser binary missing for '%s'; downloading..."
+                  % name)
+            if not engine.ensure_binary():
+                raise RuntimeError(
+                    "browser binary download failed; check your internet "
+                    "connection and try again")
+            print("[DOWNLOAD] browser binary ready for '%s'" % name)
+        with _running_lock:
+            entry = _running.get(name)
+            if entry is not None and entry["status"] == "downloading":
+                entry["status"] = "starting"
+        launched = engine.launch_profile(persona, headless=False)
     except Exception as exc:
         with _running_lock:
             entry = _running.get(name)
@@ -551,25 +569,16 @@ def create_app() -> FastAPI:
                 raise HTTPException(
                     409, "profile '%s' is already %s"
                     % (name, entry["status"]))
-            # Guard BEFORE spawning the thread: a missing binary would
-            # kick off a multi-GB browser download instead of failing fast.
+            # Auto-install: if the browser binary is missing, the worker thread
+            # downloads it (status shows "downloading") instead of failing.
             try:
                 engine = _engine_for(persona)
                 binary_ok = engine.binary_present()
             except Exception:
                 binary_ok = False
                 engine = None
-            if not binary_ok:
-                if engine is not None and engine.name == "patchright":
-                    hint = ("patchright chromium binary not installed; run "
-                            "PYTHONPATH=vendor .venv/bin/python -m patchright "
-                            "install chromium")
-                else:
-                    hint = ("camoufox browser binary not installed; "
-                            "run setup_browser.py first")
-                raise HTTPException(409, hint)
-            _running[name] = {"status": "starting", "launched": None,
-                              "error": None}
+            _running[name] = {"status": "downloading" if not binary_ok else "starting",
+                              "launched": None, "error": None}
         threading.Thread(target=_launch_worker, args=(name, persona),
                          daemon=True).start()
         return {"status": "starting"}
