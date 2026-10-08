@@ -217,18 +217,68 @@ class ProxyManager:
             True if the TCP connection succeeded, False on any error.
             Never raises.
         """
+        result = self.test_with_latency(name)
+        return result["ok"]
+
+    def test_with_latency(self, name) -> dict:
+        """Test a proxy and measure connection latency in ms.
+
+        Returns:
+            ``{"ok": bool, "latency_ms": int|None, "error": str|None}``.
+            Never raises.
+        """
+        import time
         try:
             proxy = self.get(name)
-        except (KeyError, Exception):
-            return False
+        except (KeyError, Exception) as exc:
+            return {"ok": False, "latency_ms": None,
+                    "error": "no proxy named '%s'" % name}
+        start = time.monotonic()
         try:
             sock = socket.create_connection(
                 (proxy["host"], proxy["port"]), timeout=5
             )
             sock.close()
-            return True
-        except Exception:
-            return False
+            latency = int((time.monotonic() - start) * 1000)
+            return {"ok": True, "latency_ms": latency, "error": None}
+        except Exception as exc:
+            return {"ok": False, "latency_ms": None, "error": str(exc)}
+
+    def update(self, name, **fields) -> dict:
+        """Update a proxy's fields (host, port, username, password, ptype).
+
+        Raises:
+            KeyError: If no proxy with ``name`` exists.
+            ValueError: On invalid port or ptype.
+        """
+        allowed = {"host", "port", "username", "password", "ptype"}
+        updates = {k: v for k, v in fields.items() if k in allowed}
+        if "port" in updates:
+            port = updates["port"]
+            if not isinstance(port, int) or not 1 <= port <= 65535:
+                raise ValueError(
+                    f"port must be an integer in 1..65535, got {port!r}")
+        if "ptype" in updates and updates["ptype"] not in _PROXY_TYPES:
+            raise ValueError(
+                f"ptype must be one of {sorted(_PROXY_TYPES)}, "
+                f"got {updates['ptype']!r}")
+        if "password" in updates and updates["password"] is not None:
+            from src.security.crypto import encrypt_str, is_encrypted
+            pw = updates["password"]
+            if not is_encrypted(pw):
+                updates["password"] = "enc:" + encrypt_str(pw)
+        if not updates:
+            return self.get(name)
+        set_clause = ", ".join(f"{k} = ?" for k in updates)
+        with self._lock, self._connect() as conn:
+            cur = conn.execute(
+                f"UPDATE proxies SET {set_clause} WHERE name = ?",
+                (*updates.values(), name),
+            )
+            conn.commit()
+            if cur.rowcount == 0:
+                raise KeyError(f"no proxy named '{name}'")
+        return self.get(name)
 
     # -- Worker B: proxy geo-sync (additive) --------------------------
     def assign_and_sync(self, profile_name, proxy_name):

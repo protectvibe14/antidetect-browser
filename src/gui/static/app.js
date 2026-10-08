@@ -56,6 +56,12 @@ const api = {
   assignGroup: (profile, group) => req("POST",
     "/api/profiles/" + encodeURIComponent(profile) + "/group",
     JSON.stringify({ group_name: group })),
+  createProxy: (p) => req("POST", "/api/proxies", JSON.stringify(p)),
+  updateProxy: (name, p) => req("PUT", "/api/proxies/" + encodeURIComponent(name), JSON.stringify(p)),
+  deleteProxy: (name) => req("DELETE", "/api/proxies/" + encodeURIComponent(name)),
+  testProxy: (name) => req("POST", "/api/proxies/" + encodeURIComponent(name) + "/test"),
+  bulkImportProxies: (text, type) => req("POST", "/api/proxies/bulk-import",
+    JSON.stringify({ text, type })),
   bulkImport: (file, clientTag) => {
     const fd = new FormData();
     fd.append("file", file);
@@ -875,6 +881,129 @@ async function onGroupCreate(e) {
   } catch (e) { toast("Create failed: " + (e.message || e), "error"); }
 }
 
+/* ---------------- Proxies modal ---------------- */
+$("btn-proxies").addEventListener("click", () => {
+  renderProxiesList();
+  openModal("modal-proxies");
+});
+
+// Proxy modal tabs.
+document.querySelectorAll("#proxy-tabs .ps-tab").forEach(t => {
+  t.addEventListener("click", () => {
+    document.querySelectorAll("#proxy-tabs .ps-tab").forEach(x =>
+      x.classList.toggle("active", x === t));
+    document.querySelectorAll("#modal-proxies .ps-tabpane").forEach(pn =>
+      pn.classList.toggle("active", pn.dataset.pane === t.dataset.tab));
+  });
+});
+
+async function renderProxiesList() {
+  const wrap = $("proxies-list");
+  let proxies = [];
+  try { proxies = await api.listProxies(); }
+  catch (e) { wrap.innerHTML = `<div class="ps-empty">Failed to load proxies.</div>`; return; }
+  if (proxies.length === 0) {
+    wrap.innerHTML = `<div class="ps-empty">No proxies yet. Add one or bulk-import.</div>`;
+    return;
+  }
+  wrap.innerHTML = proxies.map(p => `
+    <div class="ps-group-row" data-proxy="${esc(p.name)}">
+      <span class="ps-tag">${esc(p.type.toUpperCase())}</span>
+      <span class="ps-mono">${esc(p.name)}</span>
+      <span class="dim ps-mono">${esc(p.host)}:${esc(p.port)}</span>
+      <span class="px-status dim" data-px-status></span>
+      <span style="flex:1"></span>
+      <button class="ps-btn ghost sm" data-px-test>Test</button>
+      <button class="ps-btn danger sm" data-px-del>Delete</button>
+    </div>`).join("");
+  wrap.querySelectorAll("[data-px-test]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const row = btn.closest("[data-proxy]");
+      const name = row.dataset.proxy;
+      const st = row.querySelector("[data-px-status]");
+      btn.disabled = true;
+      st.textContent = "testing…";
+      st.className = "px-status dim";
+      try {
+        const r = await api.testProxy(name);
+        if (r.ok) {
+          st.textContent = `✓ ${r.latency_ms}ms`;
+          st.className = "px-status ok";
+        } else {
+          st.textContent = "✗ unreachable";
+          st.className = "px-status bad";
+        }
+      } catch (e) {
+        st.textContent = "✗ error";
+        st.className = "px-status bad";
+      }
+      btn.disabled = false;
+    });
+  });
+  wrap.querySelectorAll("[data-px-del]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const name = btn.closest("[data-proxy]").dataset.proxy;
+      if (!confirm(`Delete proxy "${name}"?`)) return;
+      try {
+        await api.deleteProxy(name);
+        toast(`Proxy "${name}" deleted`, "success");
+        state.proxies = await api.listProxies();
+        renderProxiesList();
+        renderStats();
+      } catch (e) { toast("Delete failed: " + (e.message || e), "error"); }
+    });
+  });
+}
+
+async function onProxyCreate(e) {
+  e.preventDefault();
+  const payload = {
+    name: $("px-name").value.trim(),
+    type: $("px-type").value,
+    host: $("px-host").value.trim(),
+    port: $("px-port").value.trim(),
+    username: $("px-user").value.trim() || null,
+    password: $("px-pass").value || null,
+  };
+  if (!payload.name || !payload.host || !payload.port) {
+    toast("Name, host and port are required", "error");
+    return;
+  }
+  try {
+    await api.createProxy(payload);
+    toast(`Proxy "${payload.name}" added`, "success");
+    e.target.reset();
+    state.proxies = await api.listProxies();
+    renderProxiesList();
+    renderStats();
+    // Switch to list tab.
+    document.querySelector('#proxy-tabs [data-tab="list"]').click();
+  } catch (err) { toast("Add failed: " + (err.message || err), "error"); }
+}
+
+async function onProxyBulk(e) {
+  e.preventDefault();
+  const text = $("px-bulk-text").value;
+  const type = $("px-bulk-type").value;
+  const resEl = $("px-bulk-result");
+  if (!text.trim()) { toast("Paste a proxy list first", "error"); return; }
+  try {
+    const r = await api.bulkImportProxies(text, type);
+    resEl.hidden = false;
+    resEl.innerHTML =
+      `<div>Added: <b>${r.added.length}</b> &nbsp; Skipped: ${r.skipped}` +
+      (r.error_count ? ` &nbsp; Errors: ${r.error_count}` : "") + `</div>` +
+      (r.added.length ? `<div class="dim">${r.added.map(esc).join(", ")}</div>` : "");
+    toast(`Imported ${r.added.length} proxies`, "success");
+    $("px-bulk-text").value = "";
+    state.proxies = await api.listProxies();
+    renderProxiesList();
+    renderStats();
+  } catch (err) {
+    toast("Import failed: " + (err.message || err), "error");
+  }
+}
+
 /* ---------------- Sync modal ---------------- */
 function syncProfileOptions(exclude) {
   return state.profiles
@@ -1156,4 +1285,8 @@ $("btn-rpa-create").addEventListener("click", async () => {
   await refreshProfiles();
   const gf = $("form-group-new");
   if (gf) gf.addEventListener("submit", onGroupCreate);
+  const pf = $("form-proxy-new");
+  if (pf) pf.addEventListener("submit", onProxyCreate);
+  const pbf = $("form-proxy-bulk");
+  if (pbf) pbf.addEventListener("submit", onProxyBulk);
 })();

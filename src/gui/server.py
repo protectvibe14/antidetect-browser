@@ -957,6 +957,128 @@ def create_app() -> FastAPI:
             for p in _proxy_manager.list()
         ]}
 
+    @app.post("/api/proxies", status_code=201)
+    def create_proxy(payload: dict):
+        """Add a new proxy definition."""
+        name = (payload.get("name") or "").strip()
+        host = (payload.get("host") or "").strip()
+        port = payload.get("port")
+        if not name or not host or port is None:
+            raise HTTPException(
+                400, "name, host and port are required")
+        try:
+            port = int(port)
+        except (TypeError, ValueError):
+            raise HTTPException(400, "port must be an integer")
+        try:
+            proxy = _proxy_manager.add(
+                name, host, port,
+                username=payload.get("username") or None,
+                password=payload.get("password") or None,
+                ptype=payload.get("type") or "http",
+            )
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+        proxy.pop("password", None)
+        return proxy
+
+    @app.put("/api/proxies/{name}")
+    def update_proxy(name: str, payload: dict):
+        """Update a proxy definition."""
+        fields = {}
+        for key in ("host", "port", "username", "password", "type"):
+            if key in payload and payload[key] is not None:
+                fields["ptype" if key == "type" else key] = payload[key]
+        if "port" in fields:
+            try:
+                fields["port"] = int(fields["port"])
+            except (TypeError, ValueError):
+                raise HTTPException(400, "port must be an integer")
+        try:
+            proxy = _proxy_manager.update(name, **fields)
+        except KeyError:
+            raise HTTPException(404, "no proxy named '%s'" % name)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+        proxy.pop("password", None)
+        return proxy
+
+    @app.delete("/api/proxies/{name}")
+    def delete_proxy(name: str):
+        """Delete a proxy definition."""
+        # Refuse if any profile currently uses this proxy.
+        for persona in _profile_manager.list():
+            fp = persona.get("fingerprint") or {}
+            px = fp.get("proxy") or {}
+            if px.get("name") == name:
+                raise HTTPException(
+                    409, "proxy '%s' is in use by profile '%s'"
+                    % (name, persona["name"]))
+        if not _proxy_manager.delete(name):
+            raise HTTPException(404, "no proxy named '%s'" % name)
+        return {"deleted": True}
+
+    @app.post("/api/proxies/{name}/test")
+    def test_proxy(name: str):
+        """Test proxy reachability and measure latency."""
+        try:
+            _proxy_manager.get(name)
+        except KeyError:
+            raise HTTPException(404, "no proxy named '%s'" % name)
+        return _proxy_manager.test_with_latency(name)
+
+    @app.post("/api/proxies/bulk-import")
+    def bulk_import_proxies(payload: dict):
+        """Bulk import proxies from text lines.
+
+        Body: {"text": "host:port:user:pass\\n...", "type": "http"}.
+        Lines may be host:port, host:port:user:pass, or
+        type://host:port:user:pass. Names auto-generated as proxy-N.
+        """
+        text = payload.get("text") or ""
+        default_type = payload.get("type") or "http"
+        import re
+        added, skipped, errors = [], 0, []
+        existing = {p["name"] for p in _proxy_manager.list()}
+        n = 1
+        for raw_line in text.splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            ptype = default_type
+            m = re.match(r"^(socks5|http|https|ssh)://(.+)$", line, re.I)
+            if m:
+                ptype = m.group(1).lower()
+                line = m.group(2)
+            parts = line.split(":")
+            if len(parts) < 2:
+                errors.append(line)
+                continue
+            host, port_s = parts[0].strip(), parts[1].strip()
+            try:
+                port = int(port_s)
+            except ValueError:
+                errors.append(line)
+                continue
+            username = parts[2].strip() if len(parts) > 2 else None
+            password = parts[3].strip() if len(parts) > 3 else None
+            # Unique name.
+            while f"proxy-{n}" in existing:
+                n += 1
+            name = f"proxy-{n}"
+            n += 1
+            try:
+                _proxy_manager.add(name, host, port,
+                                   username=username or None,
+                                   password=password or None,
+                                   ptype=ptype)
+                existing.add(name)
+                added.append(name)
+            except ValueError:
+                skipped += 1
+        return {"added": added, "skipped": skipped,
+                "errors": errors[:20], "error_count": len(errors)}
+
     # -- bulk import ------------------------------------------------------
     @app.post("/api/bulk/import")
     async def bulk_import_endpoint(file: UploadFile = File(...),
