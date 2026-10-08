@@ -7,6 +7,7 @@ They are vendored (not pip-installed) so the project is self-contained.
 |---|---|---|---|
 | camoufox | 0.5.8 | MPL-2.0 | https://github.com/daijro/camoufox |
 | browserforge | (see METADATA) | MIT | https://github.com/daijro/browserforge |
+| fpgen | 1.3.0 | (see METADATA) | https://github.com/daijro/fpgen (fingerprint ML model; model data downloads on first run via `ensure_fpgen_model()`) |
 
 ## Updating a vendored package
 

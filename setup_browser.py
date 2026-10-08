@@ -5,8 +5,10 @@ package's own fetch routine into ~/.camoufox/."""
 import sys
 
 sys.path.insert(0, "vendor")
-from camoufox.pkgman import install  # type: ignore
+from camoufox.pkgman import CamoufoxFetcher  # type: ignore
 
 if __name__ == "__main__":
-    install()
+    fetcher = CamoufoxFetcher()
+    fetcher.fetch_latest()
+    fetcher.install()
     print("Camoufox browser binary ready.")
