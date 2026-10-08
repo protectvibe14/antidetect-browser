@@ -482,7 +482,121 @@ async function submitBulkEdit(e) {
   await refreshProfiles();
 }
 
-/* ---------------- Extensions (per-profile) ---------------- */
+/* ---------------- Full-page New Profile ---------------- */
+function showView(name) {
+  $("view-profiles").hidden = name !== "profiles";
+  $("view-new-profile").hidden = name !== "new-profile";
+  // Update sidebar active state.
+  document.querySelectorAll(".ps-navitem").forEach(el =>
+    el.classList.remove("active"));
+  const navMap = { "profiles": "nav-profiles", "new-profile": null };
+  const nav = navMap[name] ? $(navMap[name]) : null;
+  if (nav) nav.classList.add("active");
+  if (name === "new-profile") initNewProfilePage();
+  window.scrollTo(0, 0);
+}
+
+function initNewProfilePage() {
+  // Populate group + proxy dropdowns.
+  const gsel = $("np-group");
+  gsel.innerHTML = `<option value="">Ungrouped</option>` +
+    state.groups.map(g => `<option value="${esc(g.name)}">${esc(g.name)}</option>`).join("");
+  loadProxyOptions("np-proxy");
+  // Pills: single-select.
+  document.querySelectorAll("#view-new-profile .ps-pills").forEach(group => {
+    group.querySelectorAll(".ps-pill").forEach(pill => {
+      pill.onclick = () => {
+        group.querySelectorAll(".ps-pill").forEach(p =>
+          p.classList.remove("active"));
+        pill.classList.add("active");
+        renderNewOverview();
+      };
+    });
+  });
+  // Segmented: single-select.
+  document.querySelectorAll("#view-new-profile .ps-seg").forEach(group => {
+    group.querySelectorAll(".ps-seg-btn").forEach(btn => {
+      btn.onclick = () => {
+        group.querySelectorAll(".ps-seg-btn").forEach(b =>
+          b.classList.remove("active"));
+        btn.classList.add("active");
+      };
+    });
+  });
+  // Toggles.
+  document.querySelectorAll("#view-new-profile .ps-toggle").forEach(t => {
+    t.onclick = () => {
+      t.classList.toggle("on");
+      t.setAttribute("aria-checked", t.classList.contains("on"));
+      renderNewOverview();
+    };
+  });
+  // Char counters.
+  $("np-name").oninput = () => {
+    $("np-name-count").textContent = `${$("np-name").value.length} / 100`;
+  };
+  $("np-remark").oninput = () => {
+    $("np-remark-count").textContent = `${$("np-remark").value.length} / 2000`;
+  };
+  renderNewOverview();
+}
+
+function pillVal(id) {
+  const el = document.querySelector(`#${id} .ps-pill.active`);
+  return el ? el.dataset.val : null;
+}
+
+function renderNewOverview() {
+  const rows = [
+    ["Browser", pillVal("np-browser") === "patchright" ? "Chromium" : "Firefox (Camoufox)"],
+    ["OS", pillVal("np-os") || "—"],
+    ["WebRTC", pillVal("np-webrtc") || "—"],
+    ["Timezone", pillVal("np-timezone") === "ip" ? "Based on IP" : (pillVal("np-timezone") || "—")],
+    ["Proxy", $("np-proxy").selectedOptions[0]?.textContent || "Direct"],
+  ];
+  $("np-overview").innerHTML = rows.map(([k, v]) =>
+    `<div class="ps-ov-row"><span class="k">${esc(k)}</span><span class="v">${esc(v)}</span></div>`).join("");
+}
+
+// New-profile page tabs.
+document.querySelectorAll("#new-tabs .ps-tab").forEach(t => {
+  t.addEventListener("click", () => {
+    document.querySelectorAll("#new-tabs .ps-tab").forEach(x =>
+      x.classList.toggle("active", x === t));
+    document.querySelectorAll("#view-new-profile .ps-tabpane").forEach(pn =>
+      pn.classList.toggle("active", pn.dataset.pane === t.dataset.tab));
+  });
+});
+
+$("np-cancel").addEventListener("click", () => showView("profiles"));
+$("np-new-fp").addEventListener("click", () => {
+  toast("Fingerprint will be generated on creation", "info");
+});
+
+$("form-new-page").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const name = $("np-name").value.trim() ||
+    `profile-${Date.now().toString(36)}`;
+  const payload = {
+    name,
+    os: pillVal("np-os") || "linux",
+    engine: pillVal("np-browser") === "patchright" ? "patchright" : "camoufox",
+    user_agent: $("np-ua").value.trim() || null,
+    group_name: $("np-group").value || null,
+    client_tag: $("np-remark").value.trim() || null,
+    proxy_name: $("np-proxy").value || null,
+  };
+  const tabs = $("np-tabs").value.split("\n").map(s => s.trim()).filter(Boolean);
+  if (tabs.length) payload.startup_urls = tabs;
+  try {
+    await api.createProfile(payload);
+    toast(`Profile "${name}" created`, "success");
+    showView("profiles");
+    await refreshProfiles();
+  } catch (err) {
+    toast("Create failed: " + (err.message || err), "error");
+  }
+});
 async function renderExtensionsList(profileName) {
   const wrap = $("edit-extensions-list");
   let exts = [];
@@ -1248,7 +1362,8 @@ function renderHealth(h) {
 }
 
 /* ---------------- Top bar wiring ---------------- */
-$("btn-new").addEventListener("click", () => openModal("modal-new"));
+$("btn-new").addEventListener("click", () => showView("new-profile"));
+$("nav-profiles").addEventListener("click", () => showView("profiles"));
 $("nav-sync").addEventListener("click", () => openSync());
 $("nav-bulk").addEventListener("click", () => {
   $("bulk-result").hidden = true;

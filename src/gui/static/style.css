@@ -251,6 +251,39 @@ button { font-family: inherit; }
 .ps-ov-row { display: flex; justify-content: space-between; font-size: 12px; padding: 5px 0; border-bottom: 1px solid var(--line-soft); }
 .ps-ov-row .k { color: var(--dim); }
 .ps-ov-row .v { color: var(--text); text-align: right; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* ---- Full-page New Profile (AdsPower-style) ---- */
+.ps-page-h { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; }
+.ps-page-h h2 { font-size: 22px; font-weight: 700; margin: 0; }
+.ps-help { width: 20px; height: 20px; border-radius: 50%; background: var(--line-soft); color: var(--dim); font-size: 12px; display: inline-flex; align-items: center; justify-content: center; cursor: help; }
+.ps-anchor-tabs { margin-bottom: 20px; border-bottom: 1px solid var(--line); }
+.ps-new-wrap { display: flex; gap: 24px; align-items: flex-start; }
+.ps-new-form { flex: 1; min-width: 0; max-width: 640px; }
+.ps-new-form .ps-field { margin-bottom: 18px; }
+.ps-new-form .ps-flabel { display: block; margin-bottom: 6px; font-size: 14px; color: var(--text); }
+.ps-req { color: #ff453a; }
+.ps-in-wrap { position: relative; display: flex; gap: 8px; align-items: center; }
+.ps-in-wrap .ps-in { flex: 1; }
+.ps-counter { font-size: 11px; color: var(--dim); white-space: nowrap; }
+.ps-icon-btn { background: none; border: none; font-size: 16px; cursor: pointer; padding: 4px; }
+.ps-link { background: none; border: none; color: var(--accent); font-size: 13px; cursor: pointer; padding: 0; }
+.ps-pills { display: flex; gap: 8px; flex-wrap: wrap; }
+.ps-pill { padding: 8px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); font-size: 13px; cursor: pointer; }
+.ps-pill.active { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.ps-seg { display: inline-flex; background: var(--bg-soft); border-radius: 10px; padding: 3px; gap: 2px; }
+.ps-seg-btn { padding: 7px 14px; border: none; border-radius: 8px; background: transparent; color: var(--dim); font-size: 13px; cursor: pointer; }
+.ps-seg-btn.active { background: var(--bg); color: var(--accent); box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+.ps-add-box { border: 1px dashed var(--line); border-radius: 10px; padding: 20px; text-align: center; }
+.ps-add-btn { background: none; border: none; color: var(--accent); font-size: 14px; cursor: pointer; }
+.ps-toggles { display: flex; flex-direction: column; gap: 10px; }
+.ps-toggle-row { display: flex; align-items: center; justify-content: space-between; font-size: 13px; }
+.ps-toggle { width: 40px; height: 22px; border-radius: 11px; background: var(--line); border: none; cursor: pointer; position: relative; transition: background 0.2s; }
+.ps-toggle .ps-knob { position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: left 0.2s; box-shadow: 0 1px 2px rgba(0,0,0,0.2); }
+.ps-toggle.on { background: var(--accent); }
+.ps-toggle.on .ps-knob { left: 20px; }
+.ps-sticky-bar { position: sticky; bottom: 0; background: var(--bg); padding: 16px 0; border-top: 1px solid var(--line); display: flex; gap: 12px; margin-top: 24px; }
+.ps-new-side { width: 300px; flex-shrink: 0; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 16px; position: sticky; top: 16px; }
+.ps-side-h { display: flex; justify-content: space-between; align-items: center; font-weight: 700; margin-bottom: 12px; }
+.ps-side-foot { margin-top: 12px; font-size: 12px; color: var(--dim); }
 .ps-pop { animation: pop .2s cubic-bezier(.2,.7,.3,1); }
 .ps-drawer-h {
   display: flex; align-items: flex-start; justify-content: space-between;

@@ -52,6 +52,7 @@
 
     <!-- ================= Main ================= -->
     <main class="ps-main">
+      <div id="view-profiles">
       <div class="ps-stats">
         <div class="ps-stat">
           <div class="ps-stat-ic">&#9783;</div>
@@ -111,6 +112,170 @@
               <tr><td colspan="9"><div class="ps-empty">Loading profiles&hellip;</div></td></tr>
             </tbody>
           </table>
+        </div>
+      </div>
+      </div><!-- /view-profiles -->
+
+      <!-- ================= New Profile full page (AdsPower-style) ================= -->
+      <div id="view-new-profile" hidden>
+        <div class="ps-page-h">
+          <h2>New Browser Profile</h2>
+          <span class="ps-help" title="Create a new browser profile">?</span>
+        </div>
+        <div class="ps-tabs ps-anchor-tabs" id="new-tabs">
+          <button class="ps-tab active" data-tab="general">General</button>
+          <button class="ps-tab" data-tab="proxy">Proxy</button>
+          <button class="ps-tab" data-tab="platform">Platform</button>
+          <button class="ps-tab" data-tab="fingerprint">Fingerprint</button>
+          <button class="ps-tab" data-tab="advanced">Advanced</button>
+        </div>
+        <div class="ps-new-wrap">
+          <form id="form-new-page" class="ps-new-form">
+            <!-- General section -->
+            <div class="ps-tabpane active" data-pane="general">
+              <div class="ps-field">
+                <label class="ps-flabel" for="np-name">Name</label>
+                <div class="ps-in-wrap">
+                  <input class="ps-in" id="np-name" type="text" placeholder="Optional: profile name" maxlength="100">
+                  <span class="ps-counter" id="np-name-count">0 / 100</span>
+                </div>
+              </div>
+              <div class="ps-field">
+                <label class="ps-flabel">Browser</label>
+                <div class="ps-pills" id="np-browser">
+                  <button type="button" class="ps-pill active" data-val="camoufox">🦊 Firefox (Camoufox)</button>
+                  <button type="button" class="ps-pill" data-val="patchright">🌐 Chromium</button>
+                </div>
+              </div>
+              <div class="ps-field">
+                <label class="ps-flabel">OS</label>
+                <div class="ps-pills" id="np-os">
+                  <button type="button" class="ps-pill" data-val="windows">🪟 Windows</button>
+                  <button type="button" class="ps-pill" data-val="macos">🍎 macOS</button>
+                  <button type="button" class="ps-pill active" data-val="linux">🐧 Linux</button>
+                  <button type="button" class="ps-pill" data-val="android">🤖 Android</button>
+                  <button type="button" class="ps-pill" data-val="ios">📱 iOS</button>
+                </div>
+              </div>
+              <div class="ps-field">
+                <label class="ps-flabel" for="np-ua">User-Agent</label>
+                <div class="ps-in-wrap">
+                  <input class="ps-in" id="np-ua" type="text" placeholder="Auto-generated">
+                  <button type="button" class="ps-icon-btn" id="np-ua-shuffle" title="Regenerate">🔀</button>
+                </div>
+              </div>
+              <div class="ps-field">
+                <label class="ps-flabel" for="np-group">Group <span class="ps-req">*</span></label>
+                <div class="ps-in-wrap">
+                  <select class="ps-in" id="np-group"></select>
+                  <button type="button" class="ps-btn ghost sm" id="np-tags-btn">🏷️ Tags</button>
+                </div>
+              </div>
+              <div class="ps-field">
+                <label class="ps-flabel" for="np-cookie">Cookie</label>
+                <input class="ps-in" id="np-cookie" type="text" placeholder="Formats: JSON, Netscape, Name=Value">
+                <div style="text-align:right"><button type="button" class="ps-link" id="np-merge-cookie">+ Merge cookie</button></div>
+              </div>
+              <div class="ps-field">
+                <label class="ps-flabel" for="np-remark">Remark</label>
+                <div class="ps-in-wrap">
+                  <input class="ps-in" id="np-remark" type="text" placeholder="Enter remark" maxlength="2000">
+                  <span class="ps-counter" id="np-remark-count">0 / 2000</span>
+                </div>
+              </div>
+            </div>
+            <!-- Proxy section -->
+            <div class="ps-tabpane" data-pane="proxy">
+              <div class="ps-field">
+                <label class="ps-flabel">Proxy setting</label>
+                <div class="ps-seg" id="np-proxy-mode">
+                  <button type="button" class="ps-seg-btn active" data-val="custom">Custom</button>
+                  <button type="button" class="ps-seg-btn" data-val="saved">Saved Proxies</button>
+                  <button type="button" class="ps-seg-btn" data-val="rotating">Rotating Proxy</button>
+                </div>
+              </div>
+              <div class="ps-field">
+                <label class="ps-flabel" for="np-proxy">Proxy</label>
+                <select class="ps-in" id="np-proxy"></select>
+              </div>
+              <div class="ps-field">
+                <label class="ps-flabel" for="np-proxy-type">Proxy type</label>
+                <select class="ps-in" id="np-proxy-type">
+                  <option value="">No Proxy (direct)</option>
+                  <option value="http">HTTP</option>
+                  <option value="https">HTTPS</option>
+                  <option value="socks5">SOCKS5</option>
+                  <option value="socks4">SOCKS4</option>
+                </select>
+              </div>
+            </div>
+            <!-- Platform section -->
+            <div class="ps-tabpane" data-pane="platform">
+              <div class="ps-field">
+                <label class="ps-flabel">Platform</label>
+                <div class="ps-add-box" id="np-platform-box">
+                  <button type="button" class="ps-add-btn">+ Add Platform Account</button>
+                </div>
+              </div>
+              <div class="ps-field">
+                <label class="ps-flabel" for="np-tabs">Tabs</label>
+                <textarea class="ps-in" id="np-tabs" rows="3" placeholder="Enter URLs (one URL per line)&#10;www.google.com&#10;www.facebook.com"></textarea>
+              </div>
+            </div>
+            <!-- Fingerprint section -->
+            <div class="ps-tabpane" data-pane="fingerprint">
+              <div class="ps-field">
+                <label class="ps-flabel">WebRTC</label>
+                <div class="ps-pills" id="np-webrtc">
+                  <button type="button" class="ps-pill" data-val="forward">Forward</button>
+                  <button type="button" class="ps-pill" data-val="replace">Replace</button>
+                  <button type="button" class="ps-pill" data-val="real">Real</button>
+                  <button type="button" class="ps-pill" data-val="disabled">Disabled</button>
+                  <button type="button" class="ps-pill active" data-val="proxy">Proxy UDP</button>
+                </div>
+              </div>
+              <div class="ps-field">
+                <label class="ps-flabel">Timezone</label>
+                <div class="ps-pills" id="np-timezone">
+                  <button type="button" class="ps-pill active" data-val="ip">Based on IP</button>
+                  <button type="button" class="ps-pill" data-val="real">Real</button>
+                  <button type="button" class="ps-pill" data-val="custom">Custom</button>
+                </div>
+              </div>
+              <div class="ps-field">
+                <label class="ps-flabel">Hardware noise</label>
+                <div class="ps-toggles">
+                  <label class="ps-toggle-row"><span>Canvas</span><button type="button" class="ps-toggle" data-val="canvas" role="switch" aria-checked="false"><span class="ps-knob"></span></button></label>
+                  <label class="ps-toggle-row"><span>WebGL Image</span><button type="button" class="ps-toggle" data-val="webgl" role="switch" aria-checked="false"><span class="ps-knob"></span></button></label>
+                  <label class="ps-toggle-row"><span>AudioContext</span><button type="button" class="ps-toggle" data-val="audio" role="switch" aria-checked="false"><span class="ps-knob"></span></button></label>
+                  <label class="ps-toggle-row"><span>ClientRects</span><button type="button" class="ps-toggle on" data-val="clientrects" role="switch" aria-checked="true"><span class="ps-knob"></span></button></label>
+                  <label class="ps-toggle-row"><span>SpeechVoices</span><button type="button" class="ps-toggle on" data-val="speech" role="switch" aria-checked="true"><span class="ps-knob"></span></button></label>
+                </div>
+              </div>
+            </div>
+            <!-- Advanced section -->
+            <div class="ps-tabpane" data-pane="advanced">
+              <div class="ps-field">
+                <label class="ps-flabel" for="np-ext">Extension</label>
+                <select class="ps-in" id="np-ext">
+                  <option value="">Use team's extensions</option>
+                </select>
+              </div>
+              <div class="ps-field">
+                <label class="ps-flabel">Random fingerprint</label>
+                <label class="ps-toggle-row"><span>New fingerprint on each startup</span><button type="button" class="ps-toggle" id="np-rand-fp" role="switch" aria-checked="false"><span class="ps-knob"></span></button></label>
+              </div>
+            </div>
+            <div class="ps-sticky-bar">
+              <button type="submit" class="ps-btn primary">OK</button>
+              <button type="button" class="ps-btn ghost" id="np-cancel">Cancel</button>
+            </div>
+          </form>
+          <aside class="ps-new-side">
+            <div class="ps-side-h">Overview <button type="button" class="ps-link" id="np-new-fp">🔀 New fingerprint</button></div>
+            <div id="np-overview"></div>
+            <div class="ps-side-foot">Set default values in <a href="#" class="ps-link">Preferences</a>.</div>
+          </aside>
         </div>
       </div>
     </main>
