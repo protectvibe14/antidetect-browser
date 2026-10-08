@@ -91,6 +91,8 @@ const api = {
   rpaRun: (recipe_id, profile) => req("POST", "/api/rpa/run",
     JSON.stringify({ recipe_id, profile })),
   rpaJobs: () => req("GET", "/api/rpa/jobs").then(d => d.jobs || d || []),
+  activity: () => req("GET", "/api/activity").then(d => d.activity || []),
+  clearActivity: () => req("DELETE", "/api/activity"),
   bulkImport: (file, clientTag) => {
     const fd = new FormData();
     fd.append("file", file);
@@ -665,6 +667,46 @@ async function onRpaRun(e) {
     setTimeout(renderRpaJobs, 2000);
   } catch (err) { toast("Run failed: " + (err.message || err), "error"); }
 }
+
+/* ---------------- Activity log UI ---------------- */
+$("btn-activity").addEventListener("click", () => {
+  renderActivityList();
+  openModal("modal-activity");
+});
+
+function fmtTime(ts) {
+  const d = new Date(ts * 1000);
+  return d.toLocaleString();
+}
+
+async function renderActivityList() {
+  const wrap = $("activity-list");
+  let items = [];
+  try { items = await api.activity(); }
+  catch (e) { wrap.innerHTML = `<div class="ps-empty">Failed to load activity.</div>`; return; }
+  if (items.length === 0) {
+    wrap.innerHTML = `<div class="ps-empty">No activity yet.</div>`;
+    return;
+  }
+  wrap.innerHTML = items.map(a => `
+    <div class="ps-group-row">
+      <span class="ps-tag">${esc(a.action)}</span>
+      <span>${esc(a.username)}</span>
+      ${a.target ? `<span class="ps-mono">${esc(a.target)}</span>` : ""}
+      ${a.detail ? `<span class="dim">${esc(a.detail)}</span>` : ""}
+      <span style="flex:1"></span>
+      <span class="dim">${fmtTime(a.ts)}</span>
+    </div>`).join("");
+}
+
+$("btn-activity-clear").addEventListener("click", async () => {
+  if (!confirm("Clear the activity log?")) return;
+  try {
+    await api.clearActivity();
+    toast("Activity log cleared", "success");
+    renderActivityList();
+  } catch (err) { toast("Clear failed: " + (err.message || err), "error"); }
+});
 
 function renderAll() {
   renderTags();

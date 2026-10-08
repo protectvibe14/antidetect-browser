@@ -56,6 +56,16 @@ _AUTH_PUBLIC = {"/login", "/api/login", "/api/logout", "/favicon.ico"}
 # ---------------------------------------------------------------------------
 _profile_manager = ProfileManager()
 _proxy_manager = ProxyManager()
+from src.team.activity import ActivityLog
+_activity_log = ActivityLog()
+
+
+def _actor(request) -> str:
+    """Return the username for the current request (for activity log)."""
+    user = getattr(request.state, "user", None)
+    if isinstance(user, dict):
+        return user.get("username", "unknown")
+    return getattr(user, "username", "unknown") or "unknown"
 
 # running[name] = {"status": "starting"|"running"|"stopped",
 #                  "launched": LaunchedProfile|None,
@@ -510,6 +520,23 @@ def create_app() -> FastAPI:
         _user_store.set_role(username, body.role)
         return {"user": _user_store.get_user(username)}
 
+    # -- activity log -----------------------------------------------------
+    @app.get("/api/activity")
+    def list_activity(request: Request, limit: int = 100):
+        """Recent activity log entries, newest first."""
+        limit = max(1, min(limit, 500))
+        return {"activity": _activity_log.list(limit=limit)}
+
+    @app.delete("/api/activity")
+    def clear_activity(request: Request):
+        """Clear the activity log (admin only)."""
+        user = request.state.user
+        role = user.get("role") if isinstance(user, dict) else getattr(user, "role", "")
+        if role != "admin":
+            raise HTTPException(403, "admin only")
+        _activity_log.clear()
+        return {"cleared": True}
+
     # -- profiles ---------------------------------------------------------
     @app.get("/api/profiles")
     def list_profiles():
@@ -518,7 +545,7 @@ def create_app() -> FastAPI:
                              _profile_manager.list()]}
 
     @app.post("/api/profiles", status_code=201)
-    def create_profile(body: ProfileCreate):
+    def create_profile(request: Request, body: ProfileCreate):
         """Create a new profile; optional proxy attached by name."""
         name = (body.name or "").strip()
         if not name:
@@ -557,6 +584,7 @@ def create_app() -> FastAPI:
             except KeyError:
                 raise HTTPException(400, str(exc))
             raise HTTPException(409, "profile '%s' already exists" % name)
+        _activity_log.record(_actor(request), "profile.create", name)
         return {"profile": _profile_view(persona)}
 
     @app.get("/api/profiles/{name}")
@@ -696,7 +724,7 @@ def create_app() -> FastAPI:
         return {"profile": _profile_view(persona)}
 
     @app.delete("/api/profiles/{name}")
-    def delete_profile(name: str):
+    def delete_profile(request: Request, name: str):
         """Delete a profile; refuses while the profile is running/starting."""
         with _running_lock:
             entry = _running.get(name)
@@ -710,6 +738,7 @@ def create_app() -> FastAPI:
         except KeyError:
             raise HTTPException(404, "no profile named '%s'" % name)
         _profile_manager.delete(name)
+        _activity_log.record(_actor(request), "profile.delete", name)
         return {"deleted": True}
 
     # ------------------------------------------------------------------
@@ -763,7 +792,7 @@ def create_app() -> FastAPI:
         return {"assigned": True}
 
     @app.post("/api/profiles/{name}/launch")
-    def launch_profile_endpoint(name: str):
+    def launch_profile_endpoint(request: Request, name: str):
         """Start the profile's browser (visible window) in a daemon thread."""
         try:
             persona = _profile_manager.get(name)
@@ -804,10 +833,11 @@ def create_app() -> FastAPI:
                               "launched": None, "error": None}
         threading.Thread(target=_launch_worker, args=(name, persona),
                          daemon=True).start()
+        _activity_log.record(_actor(request), "profile.launch", name)
         return {"status": "starting"}
 
     @app.post("/api/profiles/{name}/stop")
-    def stop_profile(name: str):
+    def stop_profile(request: Request, name: str):
         """Stop a running profile's browser; never raises out of close()."""
         with _running_lock:
             entry = _running.get(name)
@@ -823,6 +853,7 @@ def create_app() -> FastAPI:
                 launched.close()
             except Exception:
                 pass
+        _activity_log.record(_actor(request), "profile.stop", name)
         return {"status": "stopped"}
 
     @app.get("/api/profiles/{name}/health")

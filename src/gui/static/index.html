@@ -64,6 +64,7 @@
         <button class="ps-btn ghost" id="btn-theme" title="Toggle light/dark theme"><span id="theme-ic">&#9790;</span></button>
         <button class="ps-btn ghost" id="btn-sync"><span class="ps-btn-ic">&#8646;</span> Sync</button>
         <button class="ps-btn ghost" id="btn-rpa"><span class="ps-btn-ic">&#129302;</span> RPA</button>
+        <button class="ps-btn ghost" id="btn-activity"><span class="ps-btn-ic">&#128221;</span> Activity</button>
         <button class="ps-btn ghost" id="btn-proxies"><span class="ps-btn-ic">&#128737;</span> Proxies</button>
         <button class="ps-btn ghost" id="btn-bulk"><span class="ps-btn-ic">&#8681;</span> Bulk Import</button>
         <button class="ps-btn ghost" id="btn-import"><span class="ps-btn-ic">&#8678;</span> Import</button>
@@ -376,6 +377,22 @@
           <button type="submit" class="ps-btn primary">Import</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- ================= Activity log modal ================= -->
+  <div id="modal-activity" class="ps-overlay center" hidden>
+    <div class="ps-modal ps-pop ps-modal-lg">
+      <div class="ps-drawer-h">
+        <div><div class="ps-eyebrow">Team</div><div class="ps-drawer-title">Activity log</div></div>
+        <button class="ps-x" data-close aria-label="Close">&#10005;</button>
+      </div>
+      <div class="ps-form">
+        <div id="activity-list" class="ps-groups-list"></div>
+        <div class="ps-modal-foot">
+          <button class="ps-btn ghost sm" id="btn-activity-clear">Clear log</button>
+        </div>
+      </div>
     </div>
   </div>
 
