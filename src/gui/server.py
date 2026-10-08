@@ -278,6 +278,26 @@ class ProfileCreate(BaseModel):
     engine: str | None = None  # "camoufox" (default) or "chromium"/"patchright"
 
 
+class ProfileUpdate(BaseModel):
+    """Body for PUT /api/profiles/{name}. All fields optional."""
+
+    client_tag: str | None = None
+    os: str | None = None
+    engine: str | None = None
+    proxy_name: str | None = None  # set to "" to detach proxy
+    timezone: str | None = None
+    locale: str | None = None
+    user_agent: str | None = None
+    platform: str | None = None
+    screen_width: int | None = None
+    screen_height: int | None = None
+    webgl_vendor: str | None = None
+    webgl_renderer: str | None = None
+    hardware_concurrency: int | None = None
+    device_memory: int | None = None
+    regenerate_fingerprint: bool = False
+
+
 class SyncStart(BaseModel):
     """Body for POST /api/sync/start."""
 
@@ -536,6 +556,133 @@ def create_app() -> FastAPI:
             except KeyError:
                 raise HTTPException(400, str(exc))
             raise HTTPException(409, "profile '%s' already exists" % name)
+        return {"profile": _profile_view(persona)}
+
+    @app.get("/api/profiles/{name}")
+    def get_profile(name: str):
+        """Return the full persona for one profile (edit dialog)."""
+        try:
+            persona = _profile_manager.get(name)
+        except KeyError:
+            raise HTTPException(404, "no profile named '%s'" % name)
+        with _running_lock:
+            entry = _running.get(name)
+            status = entry["status"] if entry is not None else "stopped"
+        view = _profile_view(persona)
+        view["status"] = status
+        # Full fingerprint fields for the edit dialog (AdsPower-style).
+        screen = persona.get("screen") or {}
+        viewport = persona.get("viewport") or {}
+        view["fingerprint"] = {
+            "os": persona.get("os"),
+            "platform": persona.get("platform"),
+            "user_agent": persona.get("user_agent"),
+            "timezone": persona.get("timezone"),
+            "locale": persona.get("locale"),
+            "screen_width": screen.get("width"),
+            "screen_height": screen.get("height"),
+            "viewport_width": viewport.get("width"),
+            "viewport_height": viewport.get("height"),
+            "webgl_vendor": persona.get("webgl_vendor"),
+            "webgl_renderer": persona.get("webgl_renderer"),
+            "hardware_concurrency": persona.get("hardware_concurrency"),
+            "device_memory": persona.get("device_memory"),
+            "color_depth": persona.get("color_depth"),
+            "touch_points": persona.get("touch_points"),
+            "geolocation": persona.get("geolocation"),
+            "proxy": persona.get("proxy"),
+        }
+        return {"profile": view}
+
+    @app.put("/api/profiles/{name}")
+    def update_profile(name: str, body: ProfileUpdate):
+        """Update a profile's fields. Refuses while running/starting."""
+        with _running_lock:
+            entry = _running.get(name)
+            if entry is not None and entry["status"] in (
+                    "running", "starting", "downloading"):
+                raise HTTPException(
+                    409, "profile '%s' is %s; stop it before editing"
+                    % (name, entry["status"]))
+        try:
+            _profile_manager.get(name)
+        except KeyError:
+            raise HTTPException(404, "no profile named '%s'" % name)
+        fields: dict = {}
+        if body.client_tag is not None:
+            fields["client_tag"] = body.client_tag
+        if body.os is not None:
+            if body.os not in _VALID_OS:
+                raise HTTPException(
+                    400, "os must be one of %s" % (list(_VALID_OS),))
+            fields["os"] = body.os
+        if body.engine is not None:
+            try:
+                from src.engines import normalize_engine_name
+                fields["engine"] = normalize_engine_name(body.engine)
+            except ValueError as exc:
+                raise HTTPException(400, str(exc))
+        if body.proxy_name is not None:
+            if body.proxy_name == "":
+                fields["proxy"] = None
+            else:
+                try:
+                    fields["proxy"] = _proxy_manager.get(body.proxy_name)
+                except KeyError:
+                    raise HTTPException(
+                        400, "unknown proxy_name '%s'" % body.proxy_name)
+        # Fingerprint fields.
+        for key in ("timezone", "locale", "user_agent", "platform",
+                    "webgl_vendor", "webgl_renderer", "hardware_concurrency",
+                    "device_memory"):
+            val = getattr(body, key)
+            if val is not None:
+                fields[key] = val
+        screen = {}
+        if body.screen_width is not None:
+            screen["width"] = body.screen_width
+        if body.screen_height is not None:
+            screen["height"] = body.screen_height
+        if screen:
+            try:
+                persona = _profile_manager.get(name)
+            except KeyError:
+                raise HTTPException(404, "no profile named '%s'" % name)
+            merged = dict(persona.get("screen") or {})
+            merged.update(screen)
+            fields["screen"] = merged
+            # Keep viewport proportional if not separately managed.
+            vp = dict(persona.get("viewport") or {})
+            if body.screen_width is not None:
+                vp["width"] = body.screen_width
+            if body.screen_height is not None:
+                vp["height"] = max(400, body.screen_height - 80)
+            fields["viewport"] = vp
+        if body.regenerate_fingerprint:
+            try:
+                from src.fingerprints.generator import generate_persona
+                persona = _profile_manager.get(name)
+                eng = fields.get("engine", persona.get("engine") or "camoufox")
+                # generator uses firefox/chromium; engines use camoufox/patchright
+                gen_engine = {"camoufox": "firefox",
+                              "patchright": "chromium"}.get(eng, "firefox")
+                fresh = generate_persona(
+                    name, os=fields.get("os", persona.get("os", "windows")),
+                    engine=gen_engine)
+                for key in ("user_agent", "platform", "timezone", "locale",
+                            "screen", "viewport", "webgl_vendor",
+                            "webgl_renderer", "hardware_concurrency",
+                            "device_memory", "color_depth", "canvas_seed",
+                            "fonts", "touch_points"):
+                    if key in fresh:
+                        fields[key] = fresh[key]
+            except Exception as exc:
+                raise HTTPException(
+                    500, "fingerprint regeneration failed: %s" % exc)
+        try:
+            persona = _profile_manager.update(name, **fields)
+        except (KeyError, ValueError) as exc:
+            raise HTTPException(400, str(exc))
         return {"profile": _profile_view(persona)}
 
     @app.delete("/api/profiles/{name}")

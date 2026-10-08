@@ -38,6 +38,8 @@ const api = {
   listProfiles: () => req("GET", "/api/profiles").then(d => d.profiles || []),
   createProfile: (p) => req("POST", "/api/profiles", JSON.stringify(p)),
   deleteProfile: (name) => req("DELETE", "/api/profiles/" + encodeURIComponent(name)),
+  getProfile: (name) => req("GET", "/api/profiles/" + encodeURIComponent(name)).then(d => d.profile),
+  updateProfile: (name, data) => req("PUT", "/api/profiles/" + encodeURIComponent(name), JSON.stringify(data)),
   launch: (name) => req("POST", "/api/profiles/" + encodeURIComponent(name) + "/launch"),
   stop: (name) => req("POST", "/api/profiles/" + encodeURIComponent(name) + "/stop"),
   health: (name) => req("GET", "/api/profiles/" + encodeURIComponent(name) + "/health"),
@@ -279,6 +281,7 @@ function renderTable() {
         ${launchBtn}
         <button class="ps-btn ghost sm" data-act="health">&#10003; Health</button>
         <button class="ps-btn ghost sm" data-act="warmup">&#9728; Warm up</button>
+        <button class="ps-btn ghost sm" data-act="edit">&#9998; Edit</button>
         <button class="ps-btn ghost sm" data-act="cookies">&#127850; Cookies</button>
         <button class="ps-btn danger sm" data-act="delete">&#10005;</button>
       </div></td>
@@ -320,6 +323,9 @@ async function onAction(name, act) {
     } else if (act === "cookies") {
       openCookies(name);
       return; // no immediate refresh needed
+    } else if (act === "edit") {
+      openEdit(name);
+      return; // modal handles its own flow
     }
     await refreshProfiles();
   } catch (e) {
@@ -382,8 +388,8 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") document.querySelectorAll(".ps-overlay").forEach(bd => bd.hidden = true);
 });
 
-async function loadProxyOptions() {
-  const sel = $("new-proxy");
+async function loadProxyOptions(selId) {
+  const sel = $(selId || "new-proxy");
   try {
     state.proxies = await api.listProxies();
     state.proxiesLoaded = true;
@@ -565,6 +571,129 @@ $("form-warmup").addEventListener("submit", async (e) => {
 });
 
 /* ---------------- Health modal ---------------- */
+
+// ================= Edit Profile =================
+async function openEdit(name) {
+  $("edit-title").textContent = name;
+  $("edit-name").value = name;
+  // reset tabs to General
+  document.querySelectorAll("#edit-tabs .ps-tab").forEach(t =>
+    t.classList.toggle("active", t.dataset.tab === "general"));
+  document.querySelectorAll("#form-edit .ps-tabpane").forEach(pn =>
+    pn.classList.toggle("active", pn.dataset.pane === "general"));
+  $("edit-overview").innerHTML = `<div class="ps-empty">Loading&hellip;</div>`;
+  openModal("modal-edit");
+  try {
+    const prof = await api.getProfile(name);
+    fillEditForm(prof);
+  } catch (e) {
+    toast(`Failed to load "${name}": ${e.message || e}`, "error");
+    $("modal-edit").hidden = true;
+  }
+}
+
+function fillEditForm(prof) {
+  const fp = prof.fingerprint || {};
+  $("edit-os").value = fp.os || prof.os || "windows";
+  $("edit-engine").value = prof.engine || "camoufox";
+  $("edit-tag").value = prof.client_tag || "";
+  // proxy
+  loadProxyOptions("edit-proxy").then(() => {
+    const px = fp.proxy || {};
+    const sel = $("edit-proxy");
+    const cur = px.name || "";
+    if (cur && ![...sel.options].some(o => o.value === cur)) {
+      const opt = document.createElement("option");
+      opt.value = cur; opt.textContent = cur + " (attached)";
+      sel.appendChild(opt);
+    }
+    sel.value = cur;
+  });
+  // fingerprint
+  $("edit-tz").value = fp.timezone || "";
+  $("edit-locale").value = fp.locale || "";
+  $("edit-ua").value = fp.user_agent || "";
+  $("edit-platform").value = fp.platform || "";
+  $("edit-hw").value = fp.hardware_concurrency ?? "";
+  $("edit-mem").value = fp.device_memory ?? "";
+  $("edit-sw").value = fp.screen_width ?? "";
+  $("edit-sh").value = fp.screen_height ?? "";
+  $("edit-webgl-vendor").value = fp.webgl_vendor || "";
+  $("edit-webgl-renderer").value = fp.webgl_renderer || "";
+  // overview (read-only fingerprint panel, AdsPower-style)
+  const rows = [
+    ["Name", prof.name], ["Status", prof.status], ["Engine", prof.engine],
+    ["OS", fp.os], ["Platform", fp.platform],
+    ["User-Agent", fp.user_agent], ["Timezone", fp.timezone],
+    ["Locale", fp.locale],
+    ["Screen", fp.screen_width && fp.screen_height ? fp.screen_width + "x" + fp.screen_height : ""],
+    ["Viewport", fp.viewport_width && fp.viewport_height ? fp.viewport_width + "x" + fp.viewport_height : ""],
+    ["WebGL vendor", fp.webgl_vendor], ["WebGL renderer", fp.webgl_renderer],
+    ["CPU cores", fp.hardware_concurrency], ["Device memory", fp.device_memory ? fp.device_memory + " GB" : ""],
+    ["Color depth", fp.color_depth], ["Touch points", fp.touch_points],
+    ["Proxy", fp.proxy ? (fp.proxy.name || (fp.proxy.host + ":" + fp.proxy.port)) : "Direct"],
+    ["Client tag", prof.client_tag || ""],
+    ["Last used", prof.last_used || "never"],
+  ];
+  $("edit-overview").innerHTML = "<dl class=\"ps-kv\">" + rows.map(([k, v]) =>
+    `<dt>${esc(k)}</dt><dd>${esc(v == null || v === "" ? "\u2014" : String(v))}</dd>`).join("") + "</dl>";
+}
+
+async function submitEdit(e) {
+  e.preventDefault();
+  const name = $("edit-name").value;
+  const num = id => { const v = $(id).value.trim(); return v === "" ? null : parseInt(v, 10); };
+  const payload = {
+    client_tag: $("edit-tag").value.trim(),
+    os: $("edit-os").value,
+    engine: $("edit-engine").value,
+    proxy_name: $("edit-proxy").value,
+    timezone: $("edit-tz").value.trim() || null,
+    locale: $("edit-locale").value.trim() || null,
+    user_agent: $("edit-ua").value.trim() || null,
+    platform: $("edit-platform").value.trim() || null,
+    webgl_vendor: $("edit-webgl-vendor").value.trim() || null,
+    webgl_renderer: $("edit-webgl-renderer").value.trim() || null,
+    hardware_concurrency: num("edit-hw"),
+    device_memory: num("edit-mem"),
+    screen_width: num("edit-sw"),
+    screen_height: num("edit-sh"),
+  };
+  try {
+    await api.updateProfile(name, payload);
+    toast(`Profile "${name}" updated.`, "success");
+    $("modal-edit").hidden = true;
+    await refreshProfiles();
+  } catch (e2) {
+    toast(`Failed to update "${name}": ${e2.message || e2}`, "error");
+  }
+}
+
+async function regenFingerprint() {
+  const name = $("edit-name").value;
+  if (!confirm(`Regenerate fingerprint for "${name}"? The current fingerprint will be replaced.`)) return;
+  try {
+    await api.updateProfile(name, { regenerate_fingerprint: true });
+    toast("Fingerprint regenerated.", "success");
+    const prof = await api.getProfile(name);
+    fillEditForm(prof);
+    await refreshProfiles();
+  } catch (e) {
+    toast(`Regeneration failed: ${e.message || e}`, "error");
+  }
+}
+
+// tab switching + form wiring (bound once)
+document.querySelectorAll("#edit-tabs .ps-tab").forEach(t =>
+  t.addEventListener("click", () => {
+    document.querySelectorAll("#edit-tabs .ps-tab").forEach(x =>
+      x.classList.toggle("active", x === t));
+    document.querySelectorAll("#form-edit .ps-tabpane").forEach(pn =>
+      pn.classList.toggle("active", pn.dataset.pane === t.dataset.tab));
+  }));
+$("form-edit").addEventListener("submit", submitEdit);
+$("edit-regen").addEventListener("click", regenFingerprint);
+
 async function openHealth(name) {
   $("health-title").textContent = name;
   $("health-body").innerHTML = `<div class="ps-empty">Loading health&hellip;</div>`;
