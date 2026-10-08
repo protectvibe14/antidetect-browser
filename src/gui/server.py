@@ -180,6 +180,33 @@ class SyncTyping(BaseModel):
     enabled: bool
 
 
+class WarmupRun(BaseModel):
+    """Body for POST /api/warmup/run."""
+
+    profile_name: str
+    scenario: str = "youtube"  # alias (youtube/ecommerce/crypto/finance) or id
+
+
+# Warm-up run state: key (profile_name, scenario) -> {"status": "running"|"done"|"error", "result": dict|None, "error": str|None}
+_warmup_runs = {}
+_warmup_lock = threading.Lock()
+
+
+def _warmup_worker(profile_name, scenario):
+    """Background thread: run a warm-up scenario, never raises out of run()."""
+    try:
+        from src.warmup import WarmupRunner
+
+        result = WarmupRunner().run(profile_name, scenario=scenario, headless=True)
+    except Exception as exc:  # WarmupRunner.run never raises; this is belt-and-suspenders
+        result = {"success": False, "errors": ["worker error: %s" % exc]}
+    with _warmup_lock:
+        _warmup_runs[(profile_name, scenario)] = {
+            "status": "done" if result.get("success") else "error",
+            "result": result,
+        }
+
+
 # ---------------------------------------------------------------------------
 # App factory
 # ---------------------------------------------------------------------------
@@ -335,6 +362,63 @@ def create_app() -> FastAPI:
         except KeyError:
             raise HTTPException(404, "no profile named '%s'" % name)
         return HealthChecker().check(persona)
+
+    # -- warmup (Phase 6) --------------------------------------------------
+    @app.get("/api/warmup/scenarios")
+    def warmup_scenarios():
+        """List available warm-up scenarios (id/name/description)."""
+        from src.warmup import list_scenarios
+
+        return {"scenarios": list_scenarios()}
+
+    @app.post("/api/warmup/run", status_code=202)
+    def warmup_run(body: WarmupRun):
+        """Start a warm-up scenario for a profile in a background thread.
+
+        Returns immediately with ``started``; poll GET /api/warmup/status for
+        the outcome.
+        """
+        try:
+            _profile_manager.get(body.profile_name)
+        except KeyError:
+            raise HTTPException(404, "no profile named '%s'" % body.profile_name)
+        from src.warmup import list_scenarios
+        from src.warmup.scenarios import SCENARIO_ALIASES
+
+        key = body.scenario.strip().lower()
+        valid = set(SCENARIO_ALIASES) | {s["id"] for s in list_scenarios()}
+        if key not in valid:
+            raise HTTPException(
+                400,
+                "unknown scenario '%s'; expected one of %s"
+                % (body.scenario, sorted(SCENARIO_ALIASES)),
+            )
+        with _warmup_lock:
+            entry = _warmup_runs.get((body.profile_name, key))
+            if entry is not None and entry["status"] == "running":
+                raise HTTPException(
+                    409,
+                    "warm-up already running for profile '%s' (scenario '%s')"
+                    % (body.profile_name, body.scenario),
+                )
+            _warmup_runs[(body.profile_name, key)] = {"status": "running", "result": None}
+        threading.Thread(
+            target=_warmup_worker, args=(body.profile_name, key), daemon=True
+        ).start()
+        return {
+            "status": "started",
+            "profile": body.profile_name,
+            "scenario": key,
+        }
+
+    @app.get("/api/warmup/status")
+    def warmup_status(profile_name: str, scenario: str):
+        """Return the status of a warm-up run started via POST /api/warmup/run."""
+        with _warmup_lock:
+            entry = _warmup_runs.get((profile_name, scenario.strip().lower()))
+        if entry is None:
+            raise HTTPException(404, "no warm-up run for that profile/scenario")
+        return {"profile": profile_name, "scenario": scenario, **entry}
 
     # -- synchronizer -------------------------------------------------
     @app.post("/api/sync/start", status_code=201)

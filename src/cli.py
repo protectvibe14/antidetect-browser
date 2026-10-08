@@ -278,6 +278,26 @@ def cmd_profile_launch(args):
 
 
 # --------------------------------------------------------------------------- #
+# warmup commands
+# --------------------------------------------------------------------------- #
+
+def cmd_warmup(args):
+    """Run a warm-up scenario on a profile (never launches anything at import)."""
+    pm = _profile_manager()
+    _get_persona_or_fail(pm, args.profile)
+    try:
+        from src.warmup import WarmupRunner
+    except Exception as exc:
+        _fail("warmup module unavailable: %s" % exc)
+    runner = WarmupRunner(profile_manager=pm)
+    result = runner.run(args.profile, scenario=args.scenario,
+                        headless=args.headless)
+    print(json.dumps(result, indent=2))
+    if not result.get("success"):
+        _fail("warmup finished with errors")
+
+
+# --------------------------------------------------------------------------- #
 # proxy commands
 # --------------------------------------------------------------------------- #
 
@@ -595,6 +615,19 @@ def build_parser():
     h_check = h_subs.add_parser("check", help="run a health check on a profile")
     h_check.add_argument("--name", required=True)
     h_check.set_defaults(func=cmd_health_check)
+
+    # warmup ------------------------------------------------------------ #
+    p_warmup = subs.add_parser("warmup", help="run a warm-up scenario on a profile")
+    p_warmup.add_argument("profile", help="profile name to warm up")
+    p_warmup.add_argument("--scenario",
+                          choices=["youtube", "ecommerce", "crypto", "finance"],
+                          default="youtube",
+                          help="warm-up scenario to run (default: youtube)")
+    p_warmup.add_argument("--headless", dest="headless", action="store_true",
+                          default=True, help="run headless (default)")
+    p_warmup.add_argument("--no-headless", dest="headless", action="store_false",
+                          help="run with a visible browser window")
+    p_warmup.set_defaults(func=cmd_warmup)
 
     # setup ------------------------------------------------------------- #
     p_setup = subs.add_parser("setup", help="environment checks")

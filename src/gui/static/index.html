@@ -270,6 +270,27 @@
     </div>
   </div>
 
+  <!-- ================= Warm-up modal ================= -->
+  <div id="modal-warmup" class="ps-overlay center" hidden>
+    <div class="ps-modal ps-pop">
+      <div class="ps-drawer-h">
+        <div><div class="ps-eyebrow">Warm up profile</div><div class="ps-drawer-title" id="warmup-title">Warm up</div></div>
+        <button class="ps-x" data-close aria-label="Close">&#10005;</button>
+      </div>
+      <form id="form-warmup">
+        <div class="ps-field">
+          <label for="warmup-scenario">Scenario</label>
+          <select id="warmup-scenario" name="scenario"></select>
+        </div>
+        <div id="warmup-status" class="ps-empty"></div>
+        <div class="ps-modal-foot">
+          <button type="submit" class="ps-btn primary">Start warm-up</button>
+          <button type="button" class="ps-btn ghost" data-close>Close</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <div id="toasts" class="ps-toasts" aria-live="polite"></div>
 
   <script src="app.js" defer></script>

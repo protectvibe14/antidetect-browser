@@ -39,6 +39,12 @@ const api = {
   launch: (name) => req("POST", "/api/profiles/" + encodeURIComponent(name) + "/launch"),
   stop: (name) => req("POST", "/api/profiles/" + encodeURIComponent(name) + "/stop"),
   health: (name) => req("GET", "/api/profiles/" + encodeURIComponent(name) + "/health"),
+  warmupScenarios: () => req("GET", "/api/warmup/scenarios").then(d => d.scenarios || []),
+  warmupRun: (name, scenario) => req("POST", "/api/warmup/run",
+    JSON.stringify({ profile_name: name, scenario: scenario })),
+  warmupStatus: (name, scenario) => req("GET",
+    "/api/warmup/status?profile_name=" + encodeURIComponent(name) +
+    "&scenario=" + encodeURIComponent(scenario)),
   listProxies: () => req("GET", "/api/proxies").then(d => d.proxies || []),
   bulkImport: (file, clientTag) => {
     const fd = new FormData();
@@ -217,6 +223,7 @@ function renderTable() {
       <td><div class="ps-actions">
         ${launchBtn}
         <button class="ps-btn ghost sm" data-act="health">&#10003; Health</button>
+        <button class="ps-btn ghost sm" data-act="warmup">&#9728; Warm up</button>
         <button class="ps-btn ghost sm" data-act="cookies">&#127850; Cookies</button>
         <button class="ps-btn danger sm" data-act="delete">&#10005;</button>
       </div></td>
@@ -252,6 +259,9 @@ async function onAction(name, act) {
     } else if (act === "health") {
       openHealth(name);
       return; // no immediate refresh needed
+    } else if (act === "warmup") {
+      openWarmup(name);
+      return; // modal handles its own flow
     } else if (act === "cookies") {
       openCookies(name);
       return; // no immediate refresh needed
@@ -460,6 +470,41 @@ $("btn-ck-import").addEventListener("click", async () => {
   } catch (err) {
     box.innerHTML = `<span class="err">Import failed: ${esc(err.message || err)}</span>`;
     toast("Cookie import failed: " + (err.message || err), "error");
+  }
+});
+
+/* ---------------- Warm-up modal ---------------- */
+let _warmupProfile = null;
+
+async function openWarmup(name) {
+  _warmupProfile = name;
+  $("warmup-title").textContent = name;
+  $("warmup-status").innerHTML = `<div class="ps-empty">Loading scenarios&hellip;</div>`;
+  openModal("modal-warmup");
+  try {
+    const scenarios = await api.warmupScenarios();
+    $("warmup-scenario").innerHTML = scenarios.map(s =>
+      `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join("");
+    $("warmup-status").innerHTML = "";
+  } catch (e) {
+    $("warmup-status").innerHTML =
+      `<div class="ps-empty">Failed to load scenarios: ${esc(e.message || e)}</div>`;
+  }
+}
+
+$("form-warmup").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const name = _warmupProfile;
+  const scenario = $("warmup-scenario").value;
+  const box = $("warmup-status");
+  box.innerHTML = `<div class="ps-empty">Warm-up started&hellip;</div>`;
+  try {
+    const res = await api.warmupRun(name, scenario);
+    box.innerHTML = `<div class="ps-empty">Warm-up <b>started</b> for &ldquo;${esc(name)}&rdquo; (${esc(res.scenario || scenario)}). Check the server log for progress.</div>`;
+    toast(`Warm-up started for "${name}".`, "success");
+  } catch (err) {
+    box.innerHTML = `<span class="err">Warm-up failed to start: ${esc(err.message || err)}</span>`;
+    toast("Warm-up failed to start: " + (err.message || err), "error");
   }
 });
 
