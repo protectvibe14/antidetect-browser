@@ -60,6 +60,8 @@ const api = {
   updateProxy: (name, p) => req("PUT", "/api/proxies/" + encodeURIComponent(name), JSON.stringify(p)),
   deleteProxy: (name) => req("DELETE", "/api/proxies/" + encodeURIComponent(name)),
   testProxy: (name) => req("POST", "/api/proxies/" + encodeURIComponent(name) + "/test"),
+  fetchFree: (max) => req("POST", "/api/proxies/fetch-free",
+    JSON.stringify({ max: max || 20 })),
   bulkImportProxies: (text, type) => req("POST", "/api/proxies/bulk-import",
     JSON.stringify({ text, type })),
   listExtensions: (profile) => req("GET",
@@ -1443,6 +1445,24 @@ async function onProxyBulk(e) {
   }
 }
 
+async function onFetchFree() {
+  const btn = $("btn-fetch-free");
+  btn.disabled = true;
+  btn.textContent = "Fetching… (may take 30s)";
+  try {
+    const r = await api.fetchFree(20);
+    toast(`Added ${r.count} free proxies (testing only)`,
+      r.count ? "success" : "info");
+    state.proxies = await api.listProxies();
+    renderProxiesList();
+    renderStats();
+  } catch (err) {
+    toast("Fetch failed: " + (err.message || err), "error");
+  }
+  btn.disabled = false;
+  btn.innerHTML = "🎲 Fetch free proxies (testing)";
+}
+
 /* ---------------- Sync modal ---------------- */
 function syncProfileOptions(exclude) {
   return state.profiles
@@ -1728,6 +1748,8 @@ $("btn-rpa-create").addEventListener("click", async () => {
   if (pf) pf.addEventListener("submit", onProxyCreate);
   const pbf = $("form-proxy-bulk");
   if (pbf) pbf.addEventListener("submit", onProxyBulk);
+  const ffb = $("btn-fetch-free");
+  if (ffb) ffb.addEventListener("click", onFetchFree);
   // Bulk selection bar.
   const sa = $("select-all");
   if (sa) sa.addEventListener("change", () => {

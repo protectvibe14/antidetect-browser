@@ -1073,6 +1073,37 @@ def create_app() -> FastAPI:
             raise HTTPException(404, "no proxy named '%s'" % name)
         return _proxy_manager.test_with_latency(name)
 
+    @app.post("/api/proxies/fetch-free")
+    def fetch_free_proxies(request: Request, payload: dict = None):
+        """Fetch free proxies for TESTING and add working ones.
+
+        Body: {"max": 20}. WARNING: free proxies are unreliable and
+        often flagged — testing only, never for production/client use.
+        """
+        from src.proxy.free_fetcher import fetch_and_test
+        max_n = (payload or {}).get("max", 20)
+        max_n = max(1, min(int(max_n), 50))
+        working = fetch_and_test(max_proxies=max_n)
+        added = []
+        existing = {p["name"] for p in _proxy_manager.list()}
+        n = 1
+        for p in working:
+            while f"free-{n}" in existing:
+                n += 1
+            name = f"free-{n}"
+            n += 1
+            try:
+                _proxy_manager.add(name, p["host"], p["port"],
+                                   ptype=p["type"])
+                existing.add(name)
+                added.append({"name": name, **p})
+            except ValueError:
+                pass
+        _activity_log.record(_actor(request), "proxy.fetch_free",
+                             detail="%d added" % len(added))
+        return {"added": added, "count": len(added),
+                "warning": "Free proxies are for testing only."}
+
     # ------------------------------------------------------------------
     # Extensions (per-profile)
     # ------------------------------------------------------------------
