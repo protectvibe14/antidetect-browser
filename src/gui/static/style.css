@@ -241,8 +241,10 @@ button { font-family: inherit; }
 }
 .ps-modal-wide { width: 640px; }
 .ps-modal-edit { width: 900px; max-width: 96vw; }
-.ps-edit-wrap { display: flex; gap: 0; }
-.ps-edit-main { flex: 1; min-width: 0; padding: 0 22px; }
+.ps-edit-wrap { display: flex; gap: 0; align-items: flex-start; }
+.ps-edit-main { flex: 1; min-width: 0; padding: 0 22px; display: flex; flex-direction: column; }
+.ps-edit-main .ps-tabpane { flex: 1; }
+.ps-edit-main .ps-modal-foot { flex-shrink: 0; align-items: center; margin-top: 16px; padding-bottom: 16px; }
 .ps-edit-side {
   width: 260px; flex-shrink: 0; border-left: 1px solid var(--line);
   padding: 18px; background: var(--bg); border-radius: 0 0 16px 0;
