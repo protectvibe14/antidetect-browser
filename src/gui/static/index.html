@@ -63,6 +63,7 @@
         </span>
         <button class="ps-btn ghost" id="btn-theme" title="Toggle light/dark theme"><span id="theme-ic">&#9790;</span></button>
         <button class="ps-btn ghost" id="btn-sync"><span class="ps-btn-ic">&#8646;</span> Sync</button>
+        <button class="ps-btn ghost" id="btn-rpa"><span class="ps-btn-ic">&#129302;</span> RPA</button>
         <button class="ps-btn ghost" id="btn-proxies"><span class="ps-btn-ic">&#128737;</span> Proxies</button>
         <button class="ps-btn ghost" id="btn-bulk"><span class="ps-btn-ic">&#8681;</span> Bulk Import</button>
         <button class="ps-btn ghost" id="btn-import"><span class="ps-btn-ic">&#8678;</span> Import</button>
@@ -375,6 +376,82 @@
           <button type="submit" class="ps-btn primary">Import</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- ================= Synchronizer modal ================= -->
+  <div id="modal-sync" class="ps-overlay center" hidden>
+    <div class="ps-modal ps-pop">
+      <div class="ps-drawer-h">
+        <div><div class="ps-eyebrow">Automation</div><div class="ps-drawer-title">Synchronizer</div></div>
+        <button class="ps-x" data-close aria-label="Close">&#10005;</button>
+      </div>
+      <div class="ps-form">
+        <p class="ps-hint">Mirror the master profile's actions onto follower profiles.</p>
+        <div id="sync-active" hidden>
+          <div class="ps-sync-status">
+            <span class="ps-tag">ACTIVE</span>
+            <span id="sync-status-text" class="dim"></span>
+          </div>
+          <div class="ps-modal-foot">
+            <button class="ps-btn danger" id="btn-sync-stop">Stop session</button>
+          </div>
+        </div>
+        <form id="form-sync-start">
+          <div class="ps-field">
+            <label class="ps-flabel" for="sync-master">Master profile</label>
+            <select class="ps-in" id="sync-master"></select>
+          </div>
+          <div class="ps-field">
+            <label class="ps-flabel">Follower profiles</label>
+            <div id="sync-followers" class="ps-checklist"></div>
+          </div>
+          <div class="ps-field ps-checkrow">
+            <label><input type="checkbox" id="sync-typing" checked> Sync typing</label>
+          </div>
+          <div class="ps-modal-foot">
+            <button type="submit" class="ps-btn primary">Start sync</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= RPA modal ================= -->
+  <div id="modal-rpa" class="ps-overlay center" hidden>
+    <div class="ps-modal ps-pop ps-modal-lg">
+      <div class="ps-drawer-h">
+        <div><div class="ps-eyebrow">Automation</div><div class="ps-drawer-title">RPA recipes</div></div>
+        <button class="ps-x" data-close aria-label="Close">&#10005;</button>
+      </div>
+      <div class="ps-form">
+        <div class="ps-tabs" id="rpa-tabs">
+          <button class="ps-tab active" data-tab="recipes">Recipes</button>
+          <button class="ps-tab" data-tab="run">Run</button>
+          <button class="ps-tab" data-tab="jobs">Jobs</button>
+        </div>
+        <div class="ps-tabpane active" data-pane="recipes">
+          <div id="rpa-recipes-list" class="ps-groups-list"></div>
+        </div>
+        <div class="ps-tabpane" data-pane="run">
+          <form id="form-rpa-run" class="ps-form">
+            <div class="ps-field">
+              <label class="ps-flabel" for="rpa-recipe">Recipe</label>
+              <select class="ps-in" id="rpa-recipe"></select>
+            </div>
+            <div class="ps-field">
+              <label class="ps-flabel" for="rpa-profile">Profile</label>
+              <select class="ps-in" id="rpa-profile"></select>
+            </div>
+            <div class="ps-modal-foot">
+              <button type="submit" class="ps-btn primary">Run recipe</button>
+            </div>
+          </form>
+        </div>
+        <div class="ps-tabpane" data-pane="jobs">
+          <div id="rpa-jobs-list" class="ps-groups-list"></div>
+        </div>
+      </div>
     </div>
   </div>
 

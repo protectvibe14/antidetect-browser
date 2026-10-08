@@ -79,6 +79,18 @@ const api = {
     "/api/profiles/" + encodeURIComponent(profile) + "/extensions/" +
     encodeURIComponent(ext) + "/toggle",
     JSON.stringify({ enabled })),
+  syncStart: (master, followers, typing) => req("POST", "/api/sync/start",
+    JSON.stringify({ master, followers, typing })),
+  syncStop: (session_id) => req("POST", "/api/sync/stop",
+    JSON.stringify({ session_id })),
+  syncStatus: (session_id) => req("GET",
+    "/api/sync/status" + (session_id ?
+      "?session_id=" + encodeURIComponent(session_id) : "")),
+  rpaRecipes: () => req("GET", "/api/rpa/recipes")
+    .then(d => d.recipes || d || []),
+  rpaRun: (recipe_id, profile) => req("POST", "/api/rpa/run",
+    JSON.stringify({ recipe_id, profile })),
+  rpaJobs: () => req("GET", "/api/rpa/jobs").then(d => d.jobs || d || []),
   bulkImport: (file, clientTag) => {
     const fd = new FormData();
     fd.append("file", file);
@@ -497,6 +509,161 @@ async function onExtensionUpload(e) {
     fileInput.value = "";
     renderExtensionsList(profileName);
   } catch (err) { toast("Upload failed: " + (err.message || err), "error"); }
+}
+
+/* ---------------- Synchronizer UI ---------------- */
+$("btn-sync").addEventListener("click", () => {
+  populateSyncForm();
+  openModal("modal-sync");
+});
+
+function populateSyncForm() {
+  const master = $("sync-master");
+  master.innerHTML = state.profiles.map(p =>
+    `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join("");
+  const fw = $("sync-followers");
+  fw.innerHTML = state.profiles.map(p =>
+    `<label class="ps-checkitem"><input type="checkbox" value="${esc(p.name)}"> ${esc(p.name)}</label>`).join("");
+  // Uncheck the master when it changes.
+  master.addEventListener("change", () => {
+    fw.querySelectorAll("input").forEach(cb => {
+      cb.disabled = cb.value === master.value;
+      if (cb.disabled) cb.checked = false;
+    });
+  });
+  master.dispatchEvent(new Event("change"));
+  refreshSyncStatus();
+}
+
+async function refreshSyncStatus() {
+  const active = $("sync-active");
+  try {
+    const st = await api.syncStatus();
+    const sessions = st.sessions || (st.session_id ? [st] : []);
+    if (sessions.length > 0) {
+      const s = sessions[0];
+      state.syncSessionId = s.session_id;
+      $("sync-status-text").textContent =
+        `Master: ${s.master} → ${s.followers?.length || 0} followers`;
+      active.hidden = false;
+    } else {
+      state.syncSessionId = null;
+      active.hidden = true;
+    }
+  } catch (e) { active.hidden = true; }
+}
+
+async function onSyncStart(e) {
+  e.preventDefault();
+  const master = $("sync-master").value;
+  const followers = [...$("sync-followers").querySelectorAll("input:checked")]
+    .map(cb => cb.value);
+  if (!master) { toast("Pick a master profile", "error"); return; }
+  if (followers.length === 0) { toast("Pick at least one follower", "error"); return; }
+  try {
+    const r = await api.syncStart(master, followers, $("sync-typing").checked);
+    state.syncSessionId = r.session_id;
+    toast("Sync session started", "success");
+    refreshSyncStatus();
+  } catch (err) { toast("Start failed: " + (err.message || err), "error"); }
+}
+
+$("btn-sync-stop").addEventListener("click", async () => {
+  if (!state.syncSessionId) return;
+  try {
+    await api.syncStop(state.syncSessionId);
+    state.syncSessionId = null;
+    toast("Sync session stopped", "success");
+    refreshSyncStatus();
+  } catch (err) { toast("Stop failed: " + (err.message || err), "error"); }
+});
+
+/* ---------------- RPA UI ---------------- */
+$("btn-rpa").addEventListener("click", () => {
+  renderRpaRecipes();
+  populateRpaRun();
+  renderRpaJobs();
+  openModal("modal-rpa");
+});
+
+document.querySelectorAll("#rpa-tabs .ps-tab").forEach(t => {
+  t.addEventListener("click", () => {
+    document.querySelectorAll("#rpa-tabs .ps-tab").forEach(x =>
+      x.classList.toggle("active", x === t));
+    document.querySelectorAll("#modal-rpa .ps-tabpane").forEach(pn =>
+      pn.classList.toggle("active", pn.dataset.pane === t.dataset.tab));
+  });
+});
+
+async function renderRpaRecipes() {
+  const wrap = $("rpa-recipes-list");
+  let recipes = [];
+  try { recipes = await api.rpaRecipes(); }
+  catch (e) { wrap.innerHTML = `<div class="ps-empty">Failed to load recipes.</div>`; return; }
+  const list = Array.isArray(recipes) ? recipes : Object.values(recipes);
+  if (list.length === 0) {
+    wrap.innerHTML = `<div class="ps-empty">No recipes yet. Add recipes via the CLI.</div>`;
+    return;
+  }
+  wrap.innerHTML = list.map(r => {
+    const id = r.id || r.name;
+    const name = r.name || r.id;
+    return `<div class="ps-group-row">
+      <span class="ps-mono">${esc(name)}</span>
+      <span class="dim">${esc(r.description || "")}</span>
+      <span style="flex:1"></span>
+      <button class="ps-btn ghost sm" data-rpa-run="${esc(id)}">Run</button>
+    </div>`;
+  }).join("");
+  wrap.querySelectorAll("[data-rpa-run]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      $("rpa-recipe").value = btn.dataset.rpaRun;
+      document.querySelector('#rpa-tabs [data-tab="run"]').click();
+    });
+  });
+}
+
+function populateRpaRun() {
+  $("rpa-recipe").innerHTML = `<option value="">Loading…</option>`;
+  api.rpaRecipes().then(recipes => {
+    const list = Array.isArray(recipes) ? recipes : Object.values(recipes);
+    $("rpa-recipe").innerHTML = list.map(r =>
+      `<option value="${esc(r.id || r.name)}">${esc(r.name || r.id)}</option>`).join("");
+  }).catch(() => { $("rpa-recipe").innerHTML = `<option value="">No recipes</option>`; });
+  $("rpa-profile").innerHTML = state.profiles.map(p =>
+    `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join("");
+}
+
+async function renderRpaJobs() {
+  const wrap = $("rpa-jobs-list");
+  let jobs = [];
+  try { jobs = await api.rpaJobs(); }
+  catch (e) { wrap.innerHTML = `<div class="ps-empty">Failed to load jobs.</div>`; return; }
+  const list = Array.isArray(jobs) ? jobs : Object.values(jobs);
+  if (list.length === 0) {
+    wrap.innerHTML = `<div class="ps-empty">No RPA jobs yet.</div>`;
+    return;
+  }
+  wrap.innerHTML = list.slice(-20).reverse().map(j => `
+    <div class="ps-group-row">
+      <span class="ps-tag">${esc(j.status || "unknown")}</span>
+      <span class="ps-mono">${esc(j.recipe_id || j.recipe || "")}</span>
+      <span class="dim">${esc(j.profile || "")}</span>
+      <span class="dim">${esc(j.id || "")}</span>
+    </div>`).join("");
+}
+
+async function onRpaRun(e) {
+  e.preventDefault();
+  const recipe = $("rpa-recipe").value;
+  const profile = $("rpa-profile").value;
+  if (!recipe || !profile) { toast("Pick a recipe and profile", "error"); return; }
+  try {
+    const r = await api.rpaRun(recipe, profile);
+    toast(`RPA job started: ${r.job_id || r.id || ""}`, "success");
+    document.querySelector('#rpa-tabs [data-tab="jobs"]').click();
+    setTimeout(renderRpaJobs, 2000);
+  } catch (err) { toast("Run failed: " + (err.message || err), "error"); }
 }
 
 function renderAll() {
@@ -1494,4 +1661,8 @@ $("btn-rpa-create").addEventListener("click", async () => {
   if (bef) bef.addEventListener("submit", submitBulkEdit);
   const euf = $("form-ext-upload");
   if (euf) euf.addEventListener("submit", onExtensionUpload);
+  const sf = $("form-sync-start");
+  if (sf) sf.addEventListener("submit", onSyncStart);
+  const rf = $("form-rpa-run");
+  if (rf) rf.addEventListener("submit", onRpaRun);
 })();
