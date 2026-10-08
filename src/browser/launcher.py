@@ -72,6 +72,7 @@ def _clear_stale_locks(user_data_dir: str) -> None:
     lock_path = os.path.join(user_data_dir, "parent.lock")
     if not os.path.exists(lock_path):
         return
+    print("[LOCK] found stale lock: %s" % lock_path)
     # Check for any live browser process before touching the lock.
     try:
         if os.name == "nt":
@@ -80,17 +81,20 @@ def _clear_stale_locks(user_data_dir: str) -> None:
         else:
             out = os.popen('pgrep -f "camoufox" 2>/dev/null').read()
             live = bool(out.strip())
-    except Exception:
+    except Exception as exc:
+        print("[LOCK] process check failed: %s" % exc)
         live = True  # be conservative: don't touch the lock if unsure
     if live:
+        print("[LOCK] browser process still running; keeping lock")
         return
     for name in ("parent.lock", "lock"):
         p = os.path.join(user_data_dir, name)
         try:
             if os.path.islink(p) or os.path.isfile(p):
                 os.remove(p)
-        except OSError:
-            pass
+                print("[LOCK] removed stale lock: %s" % p)
+        except OSError as exc:
+            print("[LOCK] could not remove %s: %s" % (p, exc))
 
 # persona['os'] -> camoufox `os` kwarg value
 _OS_MAP = {

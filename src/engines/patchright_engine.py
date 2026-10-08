@@ -29,6 +29,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 
 from src import paths as _paths
 from src.engines.base import Engine
@@ -80,10 +81,26 @@ def chromium_executable():
     if not revision:
         return None
     root = _registry_root()
-    candidates = (
-        os.path.join(root, "chromium-%s" % revision, "chrome-linux64", "chrome"),
-        os.path.join(root, "chromium-%s" % revision, "chrome-linux", "chrome"),
-    )
+    if os.name == "nt":
+        candidates = (
+            os.path.join(root, "chromium-%s" % revision,
+                         "chrome-win64", "chrome.exe"),
+            os.path.join(root, "chromium-%s" % revision,
+                         "chrome-win", "chrome.exe"),
+        )
+    elif sys.platform == "darwin":
+        candidates = (
+            os.path.join(root, "chromium-%s" % revision,
+                         "chrome-mac", "Chromium.app",
+                         "Contents", "MacOS", "Chromium"),
+        )
+    else:
+        candidates = (
+            os.path.join(root, "chromium-%s" % revision,
+                         "chrome-linux64", "chrome"),
+            os.path.join(root, "chromium-%s" % revision,
+                         "chrome-linux", "chrome"),
+        )
     for path in candidates:
         try:
             if os.path.isfile(path) and os.access(path, os.X_OK):
