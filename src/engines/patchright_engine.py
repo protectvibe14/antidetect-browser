@@ -535,6 +535,26 @@ class PatchrightEngine(Engine):
             context.new_page = _new_page_with_noise
         except Exception:
             pass
+        # Comprehensive fingerprint spoofer (browser-fingerprint-spoofer,
+        # MIT): navigator/screen/WebGL/canvas/WebRTC/sensors/timezone/fonts.
+        # Injected at page level, configured from the profile fingerprint.
+        try:
+            from src.fingerprint.spoofer import build_injection_script
+            _spoof_js = build_injection_script(profile.get("fingerprint")
+                                               or profile)
+            _orig_new_page2 = context.new_page
+
+            def _new_page_with_spoof(*a, **kw):
+                pg = _orig_new_page2(*a, **kw)
+                try:
+                    pg.add_init_script(_spoof_js)
+                except Exception:
+                    pass
+                return pg
+
+            context.new_page = _new_page_with_spoof
+        except Exception:
+            pass
         try:
             page = context.new_page()
         except Exception:
