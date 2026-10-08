@@ -114,6 +114,7 @@ button { font-family: inherit; }
 .ps-navitem:hover { background: var(--surface); color: var(--text); }
 .ps-navitem.active { background: var(--surface2); color: var(--text); box-shadow: inset 2px 0 0 var(--violet); }
 .ps-nav-ic { font-size: 15px; width: 18px; text-align: center; }
+.ps-nav-h { font-size: 10px; letter-spacing: 1.6px; text-transform: uppercase; color: var(--dim); padding: 14px 8px 4px; }
 .ps-folders { margin-top: 22px; flex: 1; overflow-y: auto; }
 .ps-folders-h { font-size: 10px; letter-spacing: 1.6px; text-transform: uppercase; color: var(--dim); padding: 0 8px 8px; }
 .ps-folder {

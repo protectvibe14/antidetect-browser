@@ -537,7 +537,7 @@ async function onExtensionUpload(e) {
 }
 
 /* ---------------- Synchronizer UI ---------------- */
-$("btn-sync").addEventListener("click", () => {
+$("nav-sync").addEventListener("click", () => {
   populateSyncForm();
   openModal("modal-sync");
 });
@@ -604,7 +604,7 @@ $("btn-sync-stop").addEventListener("click", async () => {
 });
 
 /* ---------------- RPA UI ---------------- */
-$("btn-rpa").addEventListener("click", () => {
+$("nav-rpa").addEventListener("click", () => {
   renderRpaRecipes();
   populateRpaRun();
   renderRpaJobs();
@@ -692,7 +692,7 @@ async function onRpaRun(e) {
 }
 
 /* ---------------- Activity log UI ---------------- */
-$("btn-activity").addEventListener("click", () => {
+$("nav-activity").addEventListener("click", () => {
   renderActivityList();
   openModal("modal-activity");
 });
@@ -1241,13 +1241,13 @@ function renderHealth(h) {
 
 /* ---------------- Top bar wiring ---------------- */
 $("btn-new").addEventListener("click", () => openModal("modal-new"));
-$("btn-sync").addEventListener("click", () => openSync());
-$("btn-bulk").addEventListener("click", () => {
+$("nav-sync").addEventListener("click", () => openSync());
+$("nav-bulk").addEventListener("click", () => {
   $("bulk-result").hidden = true;
   $("bulk-result").innerHTML = "";
   openModal("modal-bulk");
 });
-$("btn-import").addEventListener("click", () => {
+$("nav-import").addEventListener("click", () => {
   $("migrate-result").hidden = true;
   $("migrate-result").innerHTML = "";
   openModal("modal-migrate");
@@ -1315,7 +1315,7 @@ async function onGroupCreate(e) {
 }
 
 /* ---------------- Proxies modal ---------------- */
-$("btn-proxies").addEventListener("click", () => {
+$("nav-proxies").addEventListener("click", () => {
   renderProxiesList();
   openModal("modal-proxies");
 });
@@ -1684,7 +1684,7 @@ function rpaStopPoll() {
   if (rpa.pollTimer) { clearInterval(rpa.pollTimer); rpa.pollTimer = null; }
 }
 
-$("btn-rpa").addEventListener("click", async () => {
+$("nav-rpa").addEventListener("click", async () => {
   openModal("modal-rpa");
   rpaProfileOptions();
   await rpaRefreshAll();
