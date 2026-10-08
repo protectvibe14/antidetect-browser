@@ -20,9 +20,7 @@ import shutil
 import zipfile
 from datetime import datetime, timezone
 
-_HOME_DIR = os.path.join(os.path.expanduser("~"), ".antidetect-browser")
-_PROFILES_DIR = os.path.join(_HOME_DIR, "profiles")
-_BACKUPS_DIR = os.path.join(_HOME_DIR, "backups")
+from src import paths as _paths
 
 _NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
@@ -47,14 +45,13 @@ def _sanitize(name: str) -> str:
 
 def _profile_dir(name: str) -> str:
     """Return the live session dir for a profile (does not create it)."""
-    _sanitize(name)
-    return os.path.join(_PROFILES_DIR, name)
+    return _paths.profile_dir(_sanitize(name))
 
 
 def _backup_root(name: str) -> str:
     """Return the backups dir for a profile (created on demand)."""
     _sanitize(name)
-    path = os.path.join(_BACKUPS_DIR, name)
+    path = os.path.join(_paths.backups_dir(create=True), name)
     os.makedirs(path, exist_ok=True)
     return path
 
@@ -103,7 +100,7 @@ def backup_profile(name: str) -> str:
 
 def _is_inside_backups(path: str) -> bool:
     """True iff ``path`` resolves inside the backups tree."""
-    root = os.path.realpath(_BACKUPS_DIR)
+    root = os.path.realpath(_paths.backups_dir())
     return os.path.realpath(path).startswith(root + os.sep)
 
 
@@ -135,7 +132,7 @@ def restore_profile(name: str, backup_path: str) -> str:
         raise ValueError(f"backup must be a .zip file: {backup_path!r}")
     if not _is_inside_backups(backup_path):
         raise ValueError(
-            f"backup must live inside {os.path.join(_HOME_DIR, 'backups')!r}: "
+            f"backup must live inside {_paths.backups_dir()!r}: "
             f"{backup_path!r}"
         )
     if not zipfile.is_zipfile(backup_path):
@@ -179,7 +176,7 @@ def list_backups(name: str) -> "list[str]":
         name: Profile name (``[A-Za-z0-9_-]+``).
     """
     _sanitize(name)
-    root = os.path.join(_BACKUPS_DIR, name)
+    root = os.path.join(_paths.backups_dir(), name)
     if not os.path.isdir(root):
         return []
     zips = [

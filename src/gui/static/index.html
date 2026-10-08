@@ -4,6 +4,13 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AntiDetect — Profile Manager</title>
+  <script>
+    /* Apply saved theme before first paint (dark is the default). */
+    try {
+      var t = localStorage.getItem("ad_theme");
+      if (t === "light") document.documentElement.setAttribute("data-theme", "light");
+    } catch (e) {}
+  </script>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -50,6 +57,11 @@
           <div><div class="ps-stat-val" id="stat-proxies">0</div><div class="ps-stat-label">Proxies</div></div>
         </div>
         <div style="flex:1"></div>
+        <span class="ps-user-chip" id="user-chip" hidden>
+          <span id="user-name"></span><span class="ps-role" id="user-role"></span>
+          <button class="ps-btn ghost sm" id="btn-logout" title="Sign out">Logout</button>
+        </span>
+        <button class="ps-btn ghost" id="btn-theme" title="Toggle light/dark theme"><span id="theme-ic">&#9790;</span></button>
         <button class="ps-btn ghost" id="btn-sync"><span class="ps-btn-ic">&#8646;</span> Sync</button>
         <button class="ps-btn ghost" id="btn-bulk"><span class="ps-btn-ic">&#8681;</span> Bulk Import</button>
         <button class="ps-btn ghost" id="btn-import"><span class="ps-btn-ic">&#8678;</span> Import</button>

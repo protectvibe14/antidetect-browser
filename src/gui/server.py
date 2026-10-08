@@ -14,23 +14,43 @@ which starts uvicorn on ``127.0.0.1:8765``.
 
 import datetime
 import os
+import secrets
+import string
 import threading
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from src.bulk.importer import bulk_import
 from src.browser.launcher import launch_profile, browser_binary_present
 from src.health.checker import HealthChecker
+from src import paths as _paths
 from src.profiles.manager import ProfileManager
 from src.proxy.manager import ProxyManager
+from src.security.session import (
+    COOKIE_NAME, SESSION_TTL_HOURS, create_session_token,
+    verify_session_token,
+)
+from src.security.users import ROLES, UserStore
 from src.sync import SyncManager
 
 _VALID_OS = ("windows", "macos", "linux")
+
+# Admin seed file location, honoring ANTIDETECT_HOME (see src.paths).
+def _admin_seed_file() -> str:
+    return _paths.admin_seed_path()
+
+# RBAC: admin-only URL prefixes under /api (user management, and any future
+# key-rotation endpoints). member = everything else; viewer = GET only.
+_ADMIN_ONLY_PREFIXES = ("/api/users",)
+
+# Paths that never require a session.
+_AUTH_PUBLIC = {"/login", "/api/login", "/api/logout", "/favicon.ico"}
 
 # ---------------------------------------------------------------------------
 # Shared (module-level) state
@@ -50,6 +70,83 @@ _last_used = {}
 # Sync sessions live here so the endpoints stay thin; the manager owns its
 # threads and closes session browsers on stop.
 _sync_manager = SyncManager(persona_getter=_profile_manager.get)
+
+# User accounts for the local dashboard (RBAC).
+_user_store = UserStore()
+
+
+def _seed_admin_if_empty():
+    """First-boot seeding: create the ``admin`` user with a random password.
+
+    Runs once per server start, and only when the users table is empty.
+    The password is printed to the console ONCE with a CHANGE THIS warning
+    and written to ``<data>/.admin_seed`` with mode 0600 so it is not lost.
+    """
+    if _user_store.count() > 0:
+        return
+    alphabet = string.ascii_letters + string.digits
+    password = "".join(secrets.choice(alphabet) for _ in range(16))
+    _user_store.create_user("admin", password, role="admin")
+    os.makedirs(os.path.dirname(_admin_seed_file()), exist_ok=True)
+    fd = os.open(_admin_seed_file(),
+                 os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(fd, "w") as fh:
+            fh.write("admin username: admin\nadmin password: %s\n" % password)
+    except BaseException:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        raise
+    os.chmod(_admin_seed_file(), 0o600)
+    print("=" * 64)
+    print("FIRST RUN: admin user created for the dashboard.")
+    print("  username: admin")
+    print("  password: %s" % password)
+    print("CHANGE THIS password after first login. The credentials were")
+    print("also saved to %s (mode 0600)." % _admin_seed_file())
+    print("=" * 64, flush=True)
+
+
+async def _auth_middleware(request: Request, call_next):
+    """Session check + RBAC for every request.
+
+    - Public paths (/login, /api/login, /api/logout, favicon) pass through.
+    - Missing/invalid session: 401 JSON for /api/*, 302 to /login for pages.
+    - viewer role: GET requests only (any POST/PUT/DELETE -> 403).
+    - member role: everything except admin-only prefixes (user management,
+      key rotation).
+    - admin role: everything.
+    """
+    path = request.url.path
+    if path in _AUTH_PUBLIC:
+        return await call_next(request)
+    payload = verify_session_token(request.cookies.get(COOKIE_NAME))
+    user = None
+    if payload:
+        try:
+            user = _user_store.get_user(payload.get("u"))
+        except KeyError:
+            user = None
+    if user is None:
+        if path.startswith("/api/"):
+            return JSONResponse({"error": "authentication required"},
+                                status_code=401)
+        return RedirectResponse("/login", status_code=302)
+    request.state.user = user
+    if path.startswith("/api/"):
+        role = user["role"]
+        if role == "viewer" and request.method != "GET":
+            return JSONResponse(
+                {"error": "forbidden: the viewer role is read-only"},
+                status_code=403)
+        if (role == "member"
+                and path.startswith(_ADMIN_ONLY_PREFIXES)):
+            return JSONResponse(
+                {"error": "forbidden: administrators only"},
+                status_code=403)
+    return await call_next(request)
 
 
 # ---------------------------------------------------------------------------
@@ -187,6 +284,27 @@ class WarmupRun(BaseModel):
     scenario: str = "youtube"  # alias (youtube/ecommerce/crypto/finance) or id
 
 
+class LoginBody(BaseModel):
+    """Body for POST /api/login."""
+
+    username: str
+    password: str
+
+
+class UserCreateBody(BaseModel):
+    """Body for POST /api/users (admin only)."""
+
+    username: str
+    password: str
+    role: str = "member"
+
+
+class UserRoleBody(BaseModel):
+    """Body for POST /api/users/{username}/role (admin only)."""
+
+    role: str
+
+
 # Warm-up run state: key (profile_name, scenario) -> {"status": "running"|"done"|"error", "result": dict|None, "error": str|None}
 _warmup_runs = {}
 _warmup_lock = threading.Lock()
@@ -242,6 +360,104 @@ def create_app() -> FastAPI:
             {"error": "internal error: %s" % exc},
             status_code=500,
         )
+
+    # -- auth: login page, session, RBAC --------------------------------
+    # First-boot admin seeding happens here so a fresh install is never
+    # left without a way in.
+    _seed_admin_if_empty()
+    app.add_middleware(BaseHTTPMiddleware, dispatch=_auth_middleware)
+
+    # Directory shared by the login page below and the static mount.
+    static_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                              "static")
+
+    @app.get("/login", include_in_schema=False)
+    def login_page():
+        """Standalone sign-in page (public)."""
+        return FileResponse(os.path.join(static_dir, "login.html"))
+
+    @app.post("/api/login")
+    def login(body: LoginBody):
+        """Verify credentials and issue the ``ad_session`` cookie."""
+        role = _user_store.verify_login(body.username, body.password)
+        if role is None:
+            raise HTTPException(401, "invalid username or password")
+        username = body.username.strip()
+        token = create_session_token(username)
+        resp = JSONResponse({"username": username, "role": role})
+        resp.set_cookie(COOKIE_NAME, token,
+                        max_age=int(SESSION_TTL_HOURS * 3600),
+                        httponly=True, samesite="lax", path="/")
+        return resp
+
+    @app.post("/api/logout")
+    def logout():
+        """Clear the session cookie."""
+        resp = JSONResponse({"ok": True})
+        resp.delete_cookie(COOKIE_NAME, path="/")
+        return resp
+
+    @app.get("/api/me")
+    def me(request: Request):
+        """Current session's user (used by the dashboard boot check)."""
+        user = request.state.user
+        return {"username": user["username"], "role": user["role"]}
+
+    # -- user management (admin only; enforced by the auth middleware) ----
+    @app.get("/api/users")
+    def list_users():
+        """List users (no password hashes)."""
+        return {"users": _user_store.list_users()}
+
+    @app.post("/api/users", status_code=201)
+    def create_user_endpoint(body: UserCreateBody):
+        """Create a user."""
+        if body.role not in ROLES:
+            raise HTTPException(400, "role must be one of %s"
+                                % (list(ROLES),))
+        try:
+            user = _user_store.create_user(body.username, body.password,
+                                           body.role)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+        except KeyError as exc:
+            raise HTTPException(409, str(exc))
+        return {"user": user}
+
+    @app.delete("/api/users/{username}")
+    def delete_user_endpoint(username: str):
+        """Delete a user; refuses to remove the last remaining admin."""
+        try:
+            target = _user_store.get_user(username)
+        except KeyError:
+            raise HTTPException(404, "no user '%s'" % username)
+        if target["role"] == "admin":
+            admins = [u for u in _user_store.list_users()
+                      if u["role"] == "admin"]
+            if len(admins) <= 1:
+                raise HTTPException(
+                    409, "cannot delete the last admin user")
+        _user_store.delete_user(username)
+        return {"deleted": True}
+
+    @app.post("/api/users/{username}/role")
+    def set_user_role_endpoint(username: str, body: UserRoleBody):
+        """Change a user's role."""
+        if body.role not in ROLES:
+            raise HTTPException(400, "role must be one of %s"
+                                % (list(ROLES),))
+        try:
+            target = _user_store.get_user(username)
+        except KeyError:
+            raise HTTPException(404, "no user '%s'" % username)
+        if target["role"] == "admin" and body.role != "admin":
+            admins = [u for u in _user_store.list_users()
+                      if u["role"] == "admin"]
+            if len(admins) <= 1:
+                raise HTTPException(
+                    409, "cannot demote the last admin user")
+        _user_store.set_role(username, body.role)
+        return {"user": _user_store.get_user(username)}
 
     # -- profiles ---------------------------------------------------------
     @app.get("/api/profiles")
@@ -722,8 +938,6 @@ def create_app() -> FastAPI:
     # Mounted LAST so /api/* routes always win. The directory may be empty
     # (frontend worker creates the bundle later); makedirs keeps StaticFiles
     # from failing on a missing directory.
-    static_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                              "static")
     os.makedirs(static_dir, exist_ok=True)
     app.mount("/", StaticFiles(directory=static_dir, html=True),
               name="static")

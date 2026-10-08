@@ -37,8 +37,12 @@ import threading
 
 import src._vendor  # noqa: F401  (first import: keep stdlib + venv only after this)
 
-_HOME_DIR = os.path.join(os.path.expanduser("~"), ".antidetect-browser")
-DB_PATH = os.path.join(_HOME_DIR, "proxies.db")
+from src import paths as _paths
+
+#: Default proxies DB path, resolved at import time for backward
+#: compatibility. ``ProxyManager()`` with no argument resolves the path at
+#: call time instead, so a later ``ANTIDETECT_HOME`` change is honored.
+DB_PATH = _paths.proxies_db()
 
 _PROXY_TYPES = {"http", "https", "socks5", "socks4"}
 
@@ -67,16 +71,17 @@ class ProxyManager:
     where ``type`` is one of ``http``, ``https``, ``socks5``, ``socks4``.
     """
 
-    def __init__(self, db_path: str = DB_PATH):
+    def __init__(self, db_path: str = None):
         """Open (creating if needed) the proxies database.
 
         Args:
             db_path: Path to the SQLite file. Defaults to
-                ``~/.antidetect-browser/proxies.db``; tests may pass a
-                temporary path instead.
+                ``src.paths.proxies_db()`` (honors ``ANTIDETECT_HOME``);
+                tests may pass a temporary path instead.
         """
-        self._db_path = db_path
-        os.makedirs(os.path.dirname(os.path.abspath(db_path)), exist_ok=True)
+        self._db_path = db_path or _paths.proxies_db()
+        os.makedirs(os.path.dirname(os.path.abspath(self._db_path)),
+                    exist_ok=True)
         self._lock = threading.Lock()
         with self._connect() as conn:
             conn.execute(_SCHEMA)

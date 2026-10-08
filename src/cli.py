@@ -464,6 +464,303 @@ def cmd_health_check(args):
 
 
 # --------------------------------------------------------------------------- #
+# key rotation (Phase 8)
+# --------------------------------------------------------------------------- #
+
+def _prompt_key(prompt):
+    """Read a key without echoing it."""
+    import getpass
+    try:
+        return getpass.getpass(prompt).strip()
+    except (EOFError, KeyboardInterrupt):
+        _fail("aborted")
+
+
+def cmd_key_rotate(args):
+    """Rotate the master encryption key: re-encrypt proxy passwords, then
+    swap the key file. Key values are never printed or logged."""
+    old_key = (args.old_key or "").strip() or _prompt_key("current master key: ")
+    new_key = (args.new_key or "").strip() or _prompt_key("new master key: ")
+    if not args.new_key:
+        confirm = _prompt_key("confirm new master key: ")
+        if confirm != new_key:
+            _fail("new keys do not match")
+    if old_key == new_key:
+        _fail("old and new keys are identical; nothing to rotate")
+    try:
+        from src.security.crypto import (
+            InvalidToken, replace_master_key, rotate_key)
+    except Exception as exc:
+        _fail("crypto module unavailable: %s" % exc)
+    try:
+        from src import paths as _paths
+    except Exception as exc:
+        _fail("paths module unavailable: %s" % exc)
+    try:
+        rotated = rotate_key(old_key, new_key)
+    except ValueError as exc:
+        _fail(str(exc))
+    except InvalidToken:
+        _fail("old key could not decrypt a stored password (wrong key or "
+              "tampered data); no key file was changed")
+    except Exception as exc:
+        _fail("rotation failed: %s" % exc)
+    # Back up the current key file before swapping.
+    key_path = _paths.master_key_path()
+    backup_path = key_path + ".bak"
+    try:
+        if os.path.exists(key_path):
+            import shutil
+            shutil.copy2(key_path, backup_path)
+            os.chmod(backup_path, 0o600)
+    except Exception as exc:
+        _fail("could not back up the current key file: %s" % exc)
+    try:
+        replace_master_key(new_key)
+    except Exception as exc:
+        _fail("re-encryption succeeded (%d password(s)) but the key file "
+              "could not be replaced: %s — restore from %s if needed"
+              % (rotated, exc, backup_path))
+    print("rotated %d encrypted proxy password(s)" % rotated)
+    print("master key replaced; previous key backed up to %s" % backup_path)
+    print("delete the backup once you have verified the new key works")
+
+
+# --------------------------------------------------------------------------- #
+# sync commands (Phase 8)
+# --------------------------------------------------------------------------- #
+
+def _sync_pidfile_dir():
+    """Dir holding sync-session pidfiles (created on demand)."""
+    from src import paths as _paths
+    return _paths.sync_dir(create=True)
+
+
+def _sync_pidfile_path(session_id):
+    safe = "".join(c for c in session_id if c.isalnum() or c in "-_") or "x"
+    return os.path.join(_sync_pidfile_dir(), "session-%s.json" % safe)
+
+
+def _write_sync_pidfile(session_id, master, followers):
+    record = {
+        "session_id": session_id,
+        "pid": os.getpid(),
+        "master": master,
+        "followers": list(followers),
+        "started_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+    }
+    path = _sync_pidfile_path(session_id)
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(record, fh, indent=2)
+    return path
+
+
+def _remove_sync_pidfile(session_id):
+    try:
+        os.unlink(_sync_pidfile_path(session_id))
+    except OSError:
+        pass
+
+
+def _sync_pid_alive(pid):
+    """True if a process with ``pid`` exists (POSIX kill 0 probe)."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True  # exists, owned by someone else
+    except OSError:
+        return False
+    return True
+
+
+def _sync_manager():
+    """Return a SyncManager bound to the profile manager (lazy import)."""
+    try:
+        from src.sync import SyncManager
+    except Exception as exc:
+        _fail("sync module unavailable: %s" % exc)
+    pm = _profile_manager()
+    try:
+        return SyncManager(persona_getter=pm.get)
+    except TypeError:
+        return SyncManager()
+
+
+def cmd_sync_start(args):
+    """Start a sync session (master + followers) and hold it until Ctrl+C.
+
+    Sessions are process-scoped: this command owns the session for its whole
+    lifetime, prints the session id, and stops everything cleanly on Ctrl+C.
+    ``sync status`` / ``sync stop`` find a running session via its pidfile.
+    """
+    followers = [f.strip() for f in (args.followers or "").split(",")
+                 if f.strip()]
+    if not followers:
+        _fail("at least one follower is required (--followers a,b)")
+    mgr = _sync_manager()
+    try:
+        session_id = mgr.create(args.master, followers,
+                                headless=not args.visible,
+                                typing_enabled=not args.no_typing)
+    except ValueError as exc:
+        _fail(str(exc))
+    except Exception as exc:
+        _fail("sync start failed: %s" % exc)
+    _write_sync_pidfile(session_id, args.master, followers)
+    print("sync session %s: master=%s followers=%s (press Ctrl+C to stop)"
+          % (session_id, args.master, ", ".join(followers)))
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("\nstopping sync session...")
+    finally:
+        _remove_sync_pidfile(session_id)
+        try:
+            final = mgr.stop(session_id)
+        except Exception:
+            final = {}
+    print("mirrored gestures: %s" % final.get("mirrored_total", "?"))
+
+
+def cmd_sync_status(args):
+    """Show sync sessions started from this machine (via pidfiles)."""
+    try:
+        pid_dir = _sync_pidfile_dir()
+        files = sorted(fn for fn in os.listdir(pid_dir)
+                       if fn.startswith("session-") and fn.endswith(".json"))
+    except OSError:
+        files = []
+    if args.session_id:
+        files = [fn for fn in files if args.session_id in fn]
+    if not files:
+        print("no sync sessions running")
+        return
+    for fn in files:
+        path = os.path.join(pid_dir, fn)
+        try:
+            with open(path, encoding="utf-8") as fh:
+                rec = json.load(fh)
+        except Exception:
+            print("%-14s unreadable pidfile %s" % ("?", fn))
+            continue
+        pid = rec.get("pid")
+        alive = isinstance(pid, int) and _sync_pid_alive(pid)
+        state = "running (pid %d)" % pid if alive else "stale (process gone)"
+        if not alive:
+            _remove_sync_pidfile(rec.get("session_id", ""))
+            state += " — pidfile cleaned"
+        print("%-14s %-22s master=%s followers=%s started=%s" % (
+            rec.get("session_id", "?"), state, rec.get("master", "?"),
+            ",".join(rec.get("followers", []) or []),
+            rec.get("started_at", "?")))
+
+
+def cmd_sync_stop(args):
+    """Stop a running sync session by signaling its start process."""
+    import signal
+    pid_dir = _sync_pidfile_dir()
+    try:
+        files = sorted(fn for fn in os.listdir(pid_dir)
+                       if fn.startswith("session-") and fn.endswith(".json"))
+    except OSError:
+        files = []
+    if args.session_id != "all":
+        files = [fn for fn in files if args.session_id in fn]
+    if not files:
+        _fail("no matching sync session (see 'sync status')")
+    stopped, gone = 0, 0
+    for fn in files:
+        path = os.path.join(pid_dir, fn)
+        try:
+            with open(path, encoding="utf-8") as fh:
+                rec = json.load(fh)
+        except Exception:
+            continue
+        pid = rec.get("pid")
+        sid = rec.get("session_id", "?")
+        if not isinstance(pid, int) or not _sync_pid_alive(pid):
+            _remove_sync_pidfile(sid)
+            gone += 1
+            continue
+        try:
+            os.kill(pid, signal.SIGINT)  # start loop treats it as Ctrl+C
+            stopped += 1
+            print("stop signal sent to session %s (pid %d)" % (sid, pid))
+        except OSError as exc:
+            print("could not signal session %s: %s" % (sid, exc),
+                  file=sys.stderr)
+    if not stopped and not gone:
+        _fail("nothing was stopped")
+    if gone and not stopped:
+        print("cleaned %d stale pidfile(s)" % gone)
+
+
+# --------------------------------------------------------------------------- #
+# sessions commands (Phase 8)
+# --------------------------------------------------------------------------- #
+
+def cmd_sessions_backup(args):
+    """Zip a profile's session dir into its backups tree."""
+    try:
+        from src.sessions.backup import backup_profile
+    except Exception as exc:
+        _fail("sessions module unavailable: %s" % exc)
+    try:
+        path = backup_profile(args.name)
+    except Exception as exc:
+        _fail("backup failed: %s" % exc)
+    print("backed up '%s' to %s" % (args.name, path))
+
+
+def cmd_sessions_restore(args):
+    """Restore a profile's session dir from a backup zip."""
+    try:
+        from src.sessions.backup import restore_profile
+    except Exception as exc:
+        _fail("sessions module unavailable: %s" % exc)
+    try:
+        path = restore_profile(args.name, args.file)
+    except FileExistsError as exc:
+        _fail(str(exc))
+    except Exception as exc:
+        _fail("restore failed: %s" % exc)
+    print("restored '%s' from %s" % (path, args.file))
+
+
+def cmd_sessions_list(args):
+    """List backup zips for a profile, oldest first."""
+    try:
+        from src.sessions.backup import list_backups
+    except Exception as exc:
+        _fail("sessions module unavailable: %s" % exc)
+    try:
+        backups = list_backups(args.name)
+    except Exception as exc:
+        _fail("list failed: %s" % exc)
+    if not backups:
+        print("no backups for '%s'" % args.name)
+        return
+    for path in backups:
+        print(path)
+
+
+def cmd_sessions_health(args):
+    """Report whether a profile dir holds real browser session state."""
+    try:
+        from src.sessions.backup import session_health
+    except Exception as exc:
+        _fail("sessions module unavailable: %s" % exc)
+    try:
+        result = session_health(args.name)
+    except Exception as exc:
+        _fail("health check failed: %s" % exc)
+    print(json.dumps(result, indent=2, default=str))
+
+
+# --------------------------------------------------------------------------- #
 # rpa commands (Phase 7)
 # --------------------------------------------------------------------------- #
 
@@ -619,7 +916,8 @@ def build_parser():
     """Build the argparse parser for the CLI."""
     parser = argparse.ArgumentParser(
         prog="python -m src.cli",
-        description="Anti-detect browser: profiles, proxies, health checks.")
+        description="Anti-detect browser: profiles, proxies, sync sessions, "
+                    "RPA recipes, warm-up, health checks, key rotation.")
     subs = parser.add_subparsers(dest="command", required=True)
 
     # profile ----------------------------------------------------------- #
@@ -725,6 +1023,71 @@ def build_parser():
     p_warmup.add_argument("--no-headless", dest="headless", action="store_false",
                           help="run with a visible browser window")
     p_warmup.set_defaults(func=cmd_warmup)
+
+    # sync -------------------------------------------------------------- #
+    p_sync = subs.add_parser(
+        "sync", help="mirror one profile's actions onto follower profiles")
+    s_subs = p_sync.add_subparsers(dest="sync_cmd", required=True)
+
+    s_start = s_subs.add_parser(
+        "start", help="start a sync session (holds until Ctrl+C)")
+    s_start.add_argument("--master", required=True,
+                         help="profile whose actions drive the session")
+    s_start.add_argument("--followers", required=True,
+                         help="comma-separated follower profile names")
+    s_start.add_argument("--visible", action="store_true",
+                         help="show browser windows (default: headless)")
+    s_start.add_argument("--no-typing", action="store_true",
+                         help="do not mirror keystrokes")
+    s_start.set_defaults(func=cmd_sync_start)
+
+    s_status = s_subs.add_parser(
+        "status", help="show sync sessions started from this machine")
+    s_status.add_argument("session_id", nargs="?",
+                          help="session id (or prefix); omit for all")
+    s_status.set_defaults(func=cmd_sync_status)
+
+    s_stop = s_subs.add_parser(
+        "stop", help="stop a running sync session")
+    s_stop.add_argument("session_id",
+                        help="session id (or prefix), or 'all'")
+    s_stop.set_defaults(func=cmd_sync_stop)
+
+    # sessions ---------------------------------------------------------- #
+    p_sess = subs.add_parser("sessions",
+                             help="back up / restore profile session dirs")
+    sess_subs = p_sess.add_subparsers(dest="sessions_cmd", required=True)
+
+    sess_backup = sess_subs.add_parser(
+        "backup", help="zip a profile's session dir into its backups tree")
+    sess_backup.add_argument("--name", required=True, help="profile name")
+    sess_backup.set_defaults(func=cmd_sessions_backup)
+
+    sess_restore = sess_subs.add_parser(
+        "restore", help="restore a profile's session dir from a backup zip")
+    sess_restore.add_argument("--name", required=True, help="profile name")
+    sess_restore.add_argument("file", help="backup zip inside the backups tree")
+    sess_restore.set_defaults(func=cmd_sessions_restore)
+
+    sess_list = sess_subs.add_parser(
+        "list", help="list backup zips for a profile")
+    sess_list.add_argument("--name", required=True, help="profile name")
+    sess_list.set_defaults(func=cmd_sessions_list)
+
+    sess_health = sess_subs.add_parser(
+        "health", help="report whether a profile dir holds real session state")
+    sess_health.add_argument("--name", required=True, help="profile name")
+    sess_health.set_defaults(func=cmd_sessions_health)
+
+    # key rotation ------------------------------------------------------ #
+    p_key = subs.add_parser(
+        "key-rotate",
+        help="rotate the master encryption key (re-encrypts proxy passwords)")
+    p_key.add_argument("--old-key", default=None,
+                       help="current master key (else: hidden prompt)")
+    p_key.add_argument("--new-key", default=None,
+                       help="new master key (else: hidden prompt)")
+    p_key.set_defaults(func=cmd_key_rotate)
 
     # rpa --------------------------------------------------------------- #
     p_rpa = subs.add_parser("rpa", help="recipe-driven browser automation")

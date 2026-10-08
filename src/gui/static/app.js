@@ -26,6 +26,8 @@ async function req(method, path, body, opts = {}) {
   try { data = await res.json(); } catch { /* non-JSON body */ }
   if (!res.ok) {
     const msg = (data && data.error) || ("HTTP " + res.status);
+    if (res.status === 401 && !window.location.pathname.startsWith("/login"))
+      window.location.href = "/login";  // session expired mid-use
     throw new ApiError(res.status, msg);
   }
   if (data && data.error) throw new ApiError(res.status, data.error);
@@ -82,6 +84,47 @@ const api = {
   rpaJobAnswer: (id, answer) =>
     req("POST", "/api/rpa/jobs/" + encodeURIComponent(id) + "/answer", JSON.stringify({ answer })),
 };
+
+/* ---------------- Theme (light/dark) ---------------- */
+const THEME_KEY = "ad_theme";
+function currentTheme() {
+  return document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
+}
+function applyThemeIcon() {
+  // sun in light mode (click to go dark), moon in dark mode (click to go light)
+  const ic = document.getElementById("theme-ic");
+  if (ic) ic.innerHTML = currentTheme() === "light" ? "&#9788;" : "&#9790;";
+  const btn = document.getElementById("btn-theme");
+  if (btn) btn.title = currentTheme() === "light" ? "Switch to dark theme" : "Switch to light theme";
+}
+function setTheme(t) {
+  if (t === "light") document.documentElement.setAttribute("data-theme", "light");
+  else document.documentElement.removeAttribute("data-theme");
+  try { localStorage.setItem(THEME_KEY, t); } catch { /* private mode */ }
+  applyThemeIcon();
+}
+
+/* ---------------- Auth ---------------- */
+async function requireAuth() {
+  // Redirect to /login when there is no valid session.
+  try {
+    const me = await req("GET", "/api/me");
+    const chip = document.getElementById("user-chip");
+    if (chip && me.username) {
+      document.getElementById("user-name").textContent = me.username;
+      document.getElementById("user-role").textContent = me.role || "";
+      chip.hidden = false;
+    }
+    return me;
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 401) window.location.href = "/login";
+    throw e;
+  }
+}
+async function logout() {
+  try { await req("POST", "/api/logout"); } catch { /* already gone */ }
+  window.location.href = "/login";
+}
 
 /* ---------------- State ---------------- */
 const state = {
@@ -872,6 +915,12 @@ $("btn-rpa-create").addEventListener("click", async () => {
 
 /* ---------------- Boot ---------------- */
 (async function boot() {
+  applyThemeIcon();
+  const themeBtn = $("btn-theme"), logoutBtn = $("btn-logout");
+  if (themeBtn) themeBtn.addEventListener("click", () =>
+    setTheme(currentTheme() === "light" ? "dark" : "light"));
+  if (logoutBtn) logoutBtn.addEventListener("click", logout);
+  await requireAuth();  // redirects to /login when there is no valid session
   try { state.proxies = await api.listProxies(); } catch { /* non-fatal */ }
   await refreshProfiles();
 })();

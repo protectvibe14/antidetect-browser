@@ -76,7 +76,8 @@ _PLATFORM_FOR_OS = {
     "linux": "Linux x86_64",
 }
 
-# ~30 realistic Firefox desktop releases (major >= 100, Camoufox-compatible).
+# Firefox desktop version pool. Kept for reference/history; the generator
+# no longer samples it (see _resolve_ua_version below).
 _UA_VERSIONS = (
     "128.0", "128.0.2", "128.0.3",
     "129.0", "129.0.1",
@@ -95,19 +96,27 @@ _UA_VERSIONS = (
     "142.0",
 )
 
+#: Fallback UA versions, used ONLY when the Camoufox browser binary is not
+#: installed (so its exact version cannot be known) and the caller did not
+#: pin a version: a narrow recent range instead of the full historical pool.
+#: Update the majors here as new Firefox releases ship.
+_FALLBACK_UA_VERSIONS = ("155.0", "156.0", "156.0.1", "157.0")
+
 # Per-OS Firefox UA templates. NEVER Chrome/Chromium: the engine is Firefox.
+# ``rv`` is the major-only token (``rv:156.0``), ``full`` the exact build
+# (``Firefox/156.0.1``) — real Firefox UAs use both forms.
 _UA_TEMPLATES = {
     "windows": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:{v}) "
-        "Gecko/20100101 Firefox/{v}"
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:{rv}) "
+        "Gecko/20100101 Firefox/{full}"
     ),
     "macos": (
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:{v}) "
-        "Gecko/20100101 Firefox/{v}"
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:{rv}) "
+        "Gecko/20100101 Firefox/{full}"
     ),
     "linux": (
-        "Mozilla/5.0 (X11; Linux x86_64; rv:{v}) "
-        "Gecko/20100101 Firefox/{v}"
+        "Mozilla/5.0 (X11; Linux x86_64; rv:{rv}) "
+        "Gecko/20100101 Firefox/{full}"
     ),
 }
 
@@ -259,6 +268,34 @@ _DEVICE_MEMORY_POOL = (8, 16, 32)
 _COUNTRY_CODES = sorted(COUNTRY_TIMEZONES.keys())
 
 
+def _resolve_ua_version(rng: random.Random,
+                       firefox_version: Optional[str] = None) -> Tuple[int, str]:
+    """Resolve the Firefox version for a persona UA: ``(major, full)``.
+
+    Priority:
+
+    1. ``firefox_version`` when the caller pins one explicitly.
+    2. The installed Camoufox browser's version (via
+       :func:`src.browser.launcher.installed_firefox_version`) — this is
+       the Phase-8 fix: the persona advertises exactly the binary it will
+       run on, so the two can never drift apart.
+    3. A narrow recent range (``_FALLBACK_UA_VERSIONS``) when the binary is
+       not installed and nothing was pinned.
+    """
+    if firefox_version is not None:
+        full = str(firefox_version).strip()
+        return (int(full.split(".")[0]), full)
+    try:
+        from src.browser.launcher import installed_firefox_version
+        installed = installed_firefox_version()
+    except Exception:
+        installed = None
+    if installed is not None:
+        return installed
+    full = rng.choice(_FALLBACK_UA_VERSIONS)
+    return (int(full.split(".")[0]), full)
+
+
 def _sample_fonts(os_name: str, rng: random.Random) -> List[str]:
     """Sample a font list with random dropout, always keeping a marker font.
 
@@ -301,6 +338,7 @@ def generate_persona(
     name: str,
     os: str = "windows",
     rng: Optional[random.Random] = None,
+    firefox_version: Optional[str] = None,
     **overrides: Any,
 ) -> Dict[str, Any]:
     """Generate a high-entropy, validator-consistent persona dict.
@@ -310,6 +348,10 @@ def generate_persona(
     :param rng: optional ``random.Random`` for seedable sampling; a fresh
         instance is used when omitted. ``secrets`` is used for
         ``canvas_seed`` regardless.
+    :param firefox_version: optional pinned Firefox version string for the
+        UA (e.g. ``"156.0.1"``). When omitted, the installed Camoufox
+        browser's version is used; when no browser is installed, a narrow
+        recent range is sampled.
     :param overrides: fields merged over the generated persona; they win on
         any conflict (including ``proxy``).
     :return: dict with exactly the 18 persona contract keys.
@@ -321,7 +363,8 @@ def generate_persona(
     if rng is None:
         rng = random.Random()
 
-    version = rng.choice(_UA_VERSIONS)
+    ua_major, ua_full = _resolve_ua_version(rng, firefox_version)
+    ua_rv = "%d.0" % ua_major
     screen_w, screen_h = _sample_resolution(os_name, rng)
     vendor, renderer = rng.choice(_WEBGL_POOLS[os_name])
     country = rng.choice(_COUNTRY_CODES)
@@ -329,7 +372,7 @@ def generate_persona(
     persona: Dict[str, Any] = {
         "name": name,
         "os": os_name,
-        "user_agent": _UA_TEMPLATES[os_name].format(v=version),
+        "user_agent": _UA_TEMPLATES[os_name].format(rv=ua_rv, full=ua_full),
         "platform": _PLATFORM_FOR_OS[os_name],
         "viewport": _viewport_for((screen_w, screen_h)),
         "screen": {"width": screen_w, "height": screen_h},

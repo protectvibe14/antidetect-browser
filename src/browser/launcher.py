@@ -40,13 +40,25 @@ Design notes
 """
 
 import os
+import re
 
 import src._vendor  # noqa: F401  (must be first: enables vendored imports)
 
 from camoufox.sync_api import Camoufox
 
-_DATA_HOME = os.path.join(os.path.expanduser("~"), ".antidetect-browser")
-_PROFILE_DIR = os.path.join(_DATA_HOME, "profiles")
+from src import paths as _paths
+
+_DATA_HOME = None  # resolved lazily via src.paths (honors ANTIDETECT_HOME)
+
+
+def _data_home() -> str:
+    """Return the data home, honoring ANTIDETECT_HOME (see src.paths)."""
+    return _paths.data_dir()
+
+
+def _profile_root() -> str:
+    """Return the per-profile user-data root dir."""
+    return _paths.profiles_dir()
 
 # persona['os'] -> camoufox `os` kwarg value
 _OS_MAP = {
@@ -187,7 +199,7 @@ def build_launch_kwargs(persona: dict, headless: bool = False) -> dict:
         kwargs["block_webrtc"] = False
 
     kwargs["persistent_context"] = True
-    kwargs["user_data_dir"] = os.path.join(_PROFILE_DIR, name)
+    kwargs["user_data_dir"] = os.path.join(_profile_root(), name)
     return kwargs
 
 
@@ -262,6 +274,63 @@ def browser_binary_present() -> bool:
         return True
     except Exception:
         return False
+
+
+_VERSION_JSON_NAME = "version.json"
+# Matches a leading "156.0.1" in dir names like "156.0.1-beta.36-72637885".
+_DIR_VERSION_RE = re.compile(r"(\d+)\.(\d+(?:\.\d+)?)")
+
+
+def installed_firefox_version():
+    """Return ``(major, full)`` of the installed Camoufox browser, or None.
+
+    ``major`` is an int (e.g. ``156``) and ``full`` the version string
+    (e.g. ``"156.0.1"``). Resolution:
+
+    1. The vendored ``camoufox_path(download_if_missing=False)`` folder's
+       ``version.json`` ``"version"`` field (primary; written by the
+       camoufox installer).
+    2. The leading ``<major>.<minor>[.<patch>]`` of the browser folder's
+       own name (fallback; layout ``<ver>-<hash>``).
+    3. ``None`` when the browser is not installed or the version cannot
+       be determined — callers must treat this as "unknown", never as a
+       failure.
+
+    Never downloads, never raises.
+    """
+    import json
+
+    try:
+        from camoufox.pkgman import camoufox_path
+        browser_dir = camoufox_path(download_if_missing=False)
+    except Exception:
+        return None
+    try:
+        browser_dir = os.fspath(browser_dir)
+    except Exception:
+        return None
+
+    # 1) version.json
+    try:
+        with open(os.path.join(browser_dir, _VERSION_JSON_NAME),
+                   encoding="utf-8") as fh:
+            info = json.load(fh)
+        full = str(info.get("version", "")).strip()
+        if full:
+            major = int(full.split(".")[0])
+            return (major, full)
+    except Exception:
+        pass
+
+    # 2) folder name fallback
+    try:
+        match = _DIR_VERSION_RE.match(os.path.basename(browser_dir) or "")
+        if match:
+            full = match.group(0)
+            return (int(match.group(1)), full)
+    except Exception:
+        pass
+    return None
 
 
 def launch_profile(persona: dict, headless: bool = False) -> LaunchedProfile:

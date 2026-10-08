@@ -57,9 +57,12 @@ _log_callbacks: Dict[str, Callable[[str], None]] = {}
 
 
 def _rpa_home() -> Path:
-    """Our data dir (DEVIATION: upstream used the repo-local ``storage/``)."""
-    home = Path(os.path.expanduser("~")) / ".antidetect-browser" / "rpa"
-    home.mkdir(parents=True, exist_ok=True)
+    """Our data dir, honoring ANTIDETECT_HOME (see src.paths).
+
+    DEVIATION: upstream used the repo-local ``storage/``.
+    """
+    from src import paths as _paths
+    home = Path(_paths.rpa_dir(create=True))
     return home
 
 

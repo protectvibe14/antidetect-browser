@@ -3,7 +3,11 @@
 Every check validates that the fields of a generated persona are mutually
 consistent (OS token in UA matches the declared OS, WebGL vendor matches the
 OS, timezone matches locale region, and so on). This module is pure logic:
-no I/O, no network, stdlib only (``re`` and ``zoneinfo``).
+no I/O, no network, stdlib only (``re`` and ``zoneinfo``), except for check
+``ua_matches_installed_browser``, which lazily queries
+:func:`src.browser.launcher.installed_firefox_version` (itself I/O-free
+apart from reading the local browser dir) and never fails when the browser
+is not installed.
 """
 
 from __future__ import annotations
@@ -371,6 +375,34 @@ class ConsistencyValidator:
             return _result(name, True, f"os={os_name!r} valid")
         return _result(name, False, f"os {os_name!r} not in {sorted(_VALID_OS_VALUES)}")
 
+    def check_ua_matches_installed_browser(self, persona: Dict[str, Any]) -> Dict[str, Any]:
+        """Persona UA major must match the installed Camoufox browser major.
+
+        Passes with a note (never fails) when the browser binary is not
+        installed or its version cannot be determined — an unknown version
+        is not an inconsistency.
+        """
+        name = "ua_matches_installed_browser"
+        try:
+            from src.browser.launcher import installed_firefox_version
+            installed = installed_firefox_version()
+        except Exception as exc:  # noqa: BLE001 - version lookup must not fail validation
+            return _result(name, True, f"version lookup failed ({exc}); skipped")
+        if installed is None:
+            return _result(name, True, "browser binary not installed; version match skipped")
+        installed_major, installed_full = installed
+        ua = self._get(persona, "user_agent") or ""
+        m = _FIREFOX_RE.search(ua)
+        if not m:
+            return _result(name, False, "UA has no Firefox/<version> token to compare")
+        ua_major = int(m.group(1))
+        if ua_major == installed_major:
+            return _result(name, True,
+                            f"UA Firefox/{ua_major} matches installed browser {installed_full}")
+        return _result(name, False,
+                        f"UA Firefox/{ua_major} != installed browser {installed_full} "
+                        f"(major {installed_major})")
+
     # -- runner ------------------------------------------------------------
 
     def validate(self, persona: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -416,4 +448,5 @@ CHECK_NAMES: List[str] = [
     "proxy_webrtc_managed",
     "name_present",
     "os_value_valid",
+    "ua_matches_installed_browser",
 ]

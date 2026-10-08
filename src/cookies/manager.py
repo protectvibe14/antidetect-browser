@@ -39,6 +39,8 @@ import re
 from pathlib import Path
 from typing import Optional
 
+from src import paths as _paths
+
 # ---------------------------------------------------------------------------
 # Vendored VERBATIM from persona-studio engine/persona/cookies.py
 # (MIT, Copyright (c) 2025 Ahsan).
@@ -176,8 +178,9 @@ def read_file(path) -> list:
 # Adaptation: browser round-trip through OUR launch layer.
 # ---------------------------------------------------------------------------
 
-_EXPORT_DIR = os.path.join(os.path.expanduser("~"), ".antidetect-browser",
-                           "cookie-exports")
+def _export_dir() -> str:
+    """Cookie-export dir, honoring ANTIDETECT_HOME (see src.paths)."""
+    return _paths.cookie_exports_dir(create=True)
 
 _EXPORT_FORMATS = ("cookie-editor", "netscape", "playwright")
 
@@ -264,7 +267,7 @@ def export_cookies(profile_name, fmt="cookie-editor", profile_manager=None):
         except Exception:
             pass
 
-    os.makedirs(_EXPORT_DIR, exist_ok=True)
+    export_dir = _export_dir()
     base = _safe_filename(profile_name)
     if fmt == "netscape":
         body = to_netscape(jar)
@@ -275,7 +278,7 @@ def export_cookies(profile_name, fmt="cookie-editor", profile_manager=None):
     else:  # cookie-editor: flat list of cookies as the extensions export
         body = json.dumps(jar, indent=2)
         ext = "json"
-    path = os.path.join(_EXPORT_DIR, "%s.%s" % (base, ext))
+    path = os.path.join(export_dir, "%s.%s" % (base, ext))
     with open(path, "w", encoding="utf-8") as fh:
         fh.write(body)
     return path

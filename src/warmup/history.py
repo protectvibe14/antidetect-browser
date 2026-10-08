@@ -20,6 +20,8 @@ profile layout: ``<profile>/places.sqlite``).
 
 import src._vendor  # noqa: F401  (must be first: enables vendored imports)
 
+from src import paths as _paths
+
 import logging
 import os
 import random
@@ -79,8 +81,9 @@ HIGH_TRUST_SITES = [
     ("https://www.linkedin.com/", "LinkedIn: Log In or Sign Up", "business"),
 ]
 
-_DATA_HOME = os.path.join(os.path.expanduser("~"), ".antidetect-browser")
-_PROFILE_DIR = os.path.join(_DATA_HOME, "profiles")
+def _profile_dir(profile_name: str) -> Path:
+    """Profile user-data dir, honoring ANTIDETECT_HOME (see src.paths)."""
+    return Path(_paths.profile_dir(profile_name))
 
 
 def _prtime_microsec(epoch_sec: float) -> int:
@@ -270,7 +273,7 @@ def seed_profile_history(
         Number of distinct URLs seeded (0 on failure).
     """
     return seed_firefox_history(
-        os.path.join(_PROFILE_DIR, profile_name),
+        _profile_dir(profile_name),
         entries_count=entries_count,
         seed=seed,
     )

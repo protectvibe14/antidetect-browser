@@ -36,6 +36,8 @@ import sqlite3
 
 from browserforge.fingerprints import FingerprintGenerator
 
+from src import paths as _paths
+
 _VALID_OS = ("windows", "macos", "linux")
 
 _DEFAULT_TIMEZONES = {
@@ -122,9 +124,12 @@ _UNSET = object()
 
 
 def _default_db_path():
-    """Return the default SQLite path, creating the parent directory."""
-    db_path = os.path.join(os.path.expanduser("~"), ".antidetect-browser",
-                           "profiles.db")
+    """Return the default SQLite path, creating the parent directory.
+
+    Honors ``ANTIDETECT_HOME`` via :mod:`src.paths` (falls back to the
+    legacy ``~/.antidetect-browser`` location when it already exists).
+    """
+    db_path = _paths.profiles_db()
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
     return db_path
 

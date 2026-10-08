@@ -1,5 +1,7 @@
 import src._vendor  # noqa: F401  -- vendored deps shim; must stay first
 
+from src import paths as _paths
+
 """Bulk CSV import/export of profiles, plus reusable profile templates.
 
 CSV format for :func:`bulk_import`
@@ -26,8 +28,9 @@ import json
 import os
 import re
 
-_HOME_DIR = os.path.join(os.path.expanduser("~"), ".antidetect-browser")
-_TEMPLATE_DIR = os.path.join(_HOME_DIR, "templates")
+def _template_dir() -> str:
+    """Templates dir, honoring ANTIDETECT_HOME (see src.paths)."""
+    return _paths.templates_dir(create=True)
 
 # Template names become file names: keep them filesystem-safe.
 _TEMPLATE_NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
@@ -52,7 +55,7 @@ def _template_path(name):
     if not isinstance(name, str) or not _TEMPLATE_NAME_RE.match(name):
         raise ValueError(
             "template name must match [A-Za-z0-9_-]+, got %r" % (name,))
-    return os.path.join(_TEMPLATE_DIR, name + ".json")
+    return os.path.join(_template_dir(), name + ".json")
 
 
 def save_template(name, fields):
@@ -64,7 +67,7 @@ def save_template(name, fields):
     :raises ValueError: on an invalid template name.
     """
     path = _template_path(name)
-    os.makedirs(_TEMPLATE_DIR, exist_ok=True)
+    os.makedirs(_template_dir(), exist_ok=True)
     data = dict(fields)
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(data, fh, indent=2, sort_keys=True)
@@ -73,10 +76,10 @@ def save_template(name, fields):
 
 def list_templates():
     """Return the sorted names of all saved templates."""
-    os.makedirs(_TEMPLATE_DIR, exist_ok=True)
+    tmpl = _template_dir()
     return sorted(
         fname[:-len(".json")]
-        for fname in os.listdir(_TEMPLATE_DIR)
+        for fname in os.listdir(tmpl)
         if fname.endswith(".json")
     )
 
