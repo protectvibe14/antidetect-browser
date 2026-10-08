@@ -373,6 +373,18 @@ def build_context_kwargs(persona: dict, headless: bool = False) -> dict:
     if exe:
         kwargs["executable_path"] = exe
 
+    # Per-profile extensions (Chromium): --load-extension with enabled .crx
+    # paths. Best-effort: failures to resolve are ignored (no extensions).
+    try:
+        from src.extensions.manager import enabled_extension_paths
+        ext_paths = enabled_extension_paths(name)
+        if ext_paths:
+            args = list(kwargs.get("args", []))
+            args.append("--load-extension=" + ",".join(ext_paths))
+            kwargs["args"] = args
+    except Exception:
+        pass
+
     return kwargs
 
 

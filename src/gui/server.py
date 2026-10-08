@@ -1027,6 +1027,85 @@ def create_app() -> FastAPI:
             raise HTTPException(404, "no proxy named '%s'" % name)
         return _proxy_manager.test_with_latency(name)
 
+    # ------------------------------------------------------------------
+    # Extensions (per-profile)
+    # ------------------------------------------------------------------
+    @app.get("/api/profiles/{name}/extensions")
+    def list_extensions(name: str):
+        """List extensions installed for a profile."""
+        try:
+            _profile_manager.get(name)
+        except KeyError:
+            raise HTTPException(404, "no profile named '%s'" % name)
+        from src.extensions.manager import list_extensions as _list
+        return {"extensions": _list(name)}
+
+    @app.post("/api/profiles/{name}/extensions")
+    async def upload_extension(name: str, file: UploadFile = File(...)):
+        """Upload a .crx/.zip extension for a profile."""
+        try:
+            _profile_manager.get(name)
+        except KeyError:
+            raise HTTPException(404, "no profile named '%s'" % name)
+        # Refuse while running.
+        with _running_lock:
+            entry = _running.get(name)
+            if entry is not None and entry["status"] in (
+                    "running", "starting", "downloading"):
+                raise HTTPException(
+                    409, "profile '%s' is %s; stop it before editing"
+                    % (name, entry["status"]))
+        filename = file.filename or "extension"
+        ext = os.path.splitext(filename)[1].lower()
+        if ext not in (".crx", ".zip"):
+            raise HTTPException(
+                400, "only .crx and .zip files are supported")
+        import tempfile
+        from src.extensions.manager import add_extension as _add
+        with tempfile.NamedTemporaryFile(
+                suffix=ext, delete=False) as tmp:
+            shutil.copyfileobj(file.file, tmp)
+            tmp_path = tmp.name
+        try:
+            item = _add(name, tmp_path,
+                        name=os.path.splitext(filename)[0])
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+        return item
+
+    @app.delete("/api/profiles/{name}/extensions/{ext_name}")
+    def delete_extension(name: str, ext_name: str):
+        """Remove an extension from a profile."""
+        try:
+            _profile_manager.get(name)
+        except KeyError:
+            raise HTTPException(404, "no profile named '%s'" % name)
+        from src.extensions.manager import remove_extension as _remove
+        try:
+            _remove(name, ext_name)
+        except ValueError as exc:
+            raise HTTPException(404, str(exc))
+        return {"deleted": True}
+
+    @app.post("/api/profiles/{name}/extensions/{ext_name}/toggle")
+    def toggle_extension(name: str, ext_name: str, payload: dict):
+        """Enable/disable an extension. Body: {"enabled": bool}."""
+        try:
+            _profile_manager.get(name)
+        except KeyError:
+            raise HTTPException(404, "no profile named '%s'" % name)
+        from src.extensions.manager import set_enabled as _set
+        try:
+            _set(name, ext_name, bool(payload.get("enabled", True)))
+        except ValueError as exc:
+            raise HTTPException(404, str(exc))
+        return {"updated": True}
+
     @app.post("/api/proxies/bulk-import")
     def bulk_import_proxies(payload: dict):
         """Bulk import proxies from text lines.

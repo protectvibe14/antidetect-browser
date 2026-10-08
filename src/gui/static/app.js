@@ -62,6 +62,23 @@ const api = {
   testProxy: (name) => req("POST", "/api/proxies/" + encodeURIComponent(name) + "/test"),
   bulkImportProxies: (text, type) => req("POST", "/api/proxies/bulk-import",
     JSON.stringify({ text, type })),
+  listExtensions: (profile) => req("GET",
+    "/api/profiles/" + encodeURIComponent(profile) + "/extensions")
+    .then(d => d.extensions || []),
+  uploadExtension: (profile, file) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return req("POST",
+      "/api/profiles/" + encodeURIComponent(profile) + "/extensions",
+      fd, { raw: true });
+  },
+  deleteExtension: (profile, ext) => req("DELETE",
+    "/api/profiles/" + encodeURIComponent(profile) + "/extensions/" +
+    encodeURIComponent(ext)),
+  toggleExtension: (profile, ext, enabled) => req("POST",
+    "/api/profiles/" + encodeURIComponent(profile) + "/extensions/" +
+    encodeURIComponent(ext) + "/toggle",
+    JSON.stringify({ enabled })),
   bulkImport: (file, clientTag) => {
     const fd = new FormData();
     fd.append("file", file);
@@ -426,6 +443,62 @@ async function submitBulkEdit(e) {
   await refreshProfiles();
 }
 
+/* ---------------- Extensions (per-profile) ---------------- */
+async function renderExtensionsList(profileName) {
+  const wrap = $("edit-extensions-list");
+  let exts = [];
+  try { exts = await api.listExtensions(profileName); }
+  catch (e) {
+    wrap.innerHTML = `<div class="ps-empty">Failed to load extensions.</div>`;
+    return;
+  }
+  if (exts.length === 0) {
+    wrap.innerHTML = `<div class="ps-empty">No extensions installed for this profile.</div>`;
+    return;
+  }
+  wrap.innerHTML = exts.map(x => `
+    <div class="ps-group-row">
+      <span class="ps-tag${x.enabled ? "" : " none"}">${x.enabled ? "ON" : "OFF"}</span>
+      <span class="ps-mono">${esc(x.name)}</span>
+      <span class="dim">${esc(x.filename)}</span>
+      <span style="flex:1"></span>
+      <button class="ps-btn ghost sm" data-ext-toggle="${esc(x.name)}" data-enabled="${x.enabled ? 0 : 1}">${x.enabled ? "Disable" : "Enable"}</button>
+      <button class="ps-btn danger sm" data-ext-del="${esc(x.name)}">Remove</button>
+    </div>`).join("");
+  wrap.querySelectorAll("[data-ext-toggle]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      try {
+        await api.toggleExtension(profileName, btn.dataset.extToggle,
+          btn.dataset.enabled === "1");
+        renderExtensionsList(profileName);
+      } catch (e) { toast("Toggle failed: " + (e.message || e), "error"); }
+    });
+  });
+  wrap.querySelectorAll("[data-ext-del]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      if (!confirm(`Remove extension "${btn.dataset.extDel}"?`)) return;
+      try {
+        await api.deleteExtension(profileName, btn.dataset.extDel);
+        toast("Extension removed", "success");
+        renderExtensionsList(profileName);
+      } catch (e) { toast("Remove failed: " + (e.message || e), "error"); }
+    });
+  });
+}
+
+async function onExtensionUpload(e) {
+  e.preventDefault();
+  const profileName = $("edit-name").value;
+  const fileInput = $("ext-file");
+  if (!fileInput.files.length) { toast("Choose a file first", "error"); return; }
+  try {
+    await api.uploadExtension(profileName, fileInput.files[0]);
+    toast("Extension uploaded", "success");
+    fileInput.value = "";
+    renderExtensionsList(profileName);
+  } catch (err) { toast("Upload failed: " + (err.message || err), "error"); }
+}
+
 function renderAll() {
   renderTags();
   renderStats();
@@ -738,6 +811,7 @@ async function openEdit(name) {
   try {
     const prof = await api.getProfile(name);
     fillEditForm(prof);
+    renderExtensionsList(name);
   } catch (e) {
     toast(`Failed to load "${name}": ${e.message || e}`, "error");
     $("modal-edit").hidden = true;
@@ -1418,4 +1492,6 @@ $("btn-rpa-create").addEventListener("click", async () => {
   });
   const bef = $("form-bulk-edit");
   if (bef) bef.addEventListener("submit", submitBulkEdit);
+  const euf = $("form-ext-upload");
+  if (euf) euf.addEventListener("submit", onExtensionUpload);
 })();

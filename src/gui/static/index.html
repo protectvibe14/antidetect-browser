@@ -167,6 +167,7 @@
         <button class="ps-tab active" data-tab="general">General</button>
         <button class="ps-tab" data-tab="proxy">Proxy</button>
         <button class="ps-tab" data-tab="fingerprint">Fingerprint</button>
+        <button class="ps-tab" data-tab="extensions">Extensions</button>
         <button class="ps-tab" data-tab="overview">Overview</button>
       </div>
       <form id="form-edit" class="ps-form">
@@ -256,6 +257,19 @@
             <button type="button" class="ps-btn ghost" id="edit-regen">&#10227; Regenerate fingerprint</button>
             <span class="ps-hint">Generates a fresh coherent fingerprint (keeps name, proxy, tag).</span>
           </div>
+        </div>
+        <div class="ps-tabpane" data-pane="extensions">
+          <div id="edit-extensions-list" class="ps-groups-list"></div>
+          <form id="form-ext-upload" class="ps-form" style="margin-top:12px">
+            <div class="ps-field">
+              <label class="ps-flabel" for="ext-file">Upload extension <span class="ps-flabel-hint">(.crx or .zip)</span></label>
+              <input class="ps-in" id="ext-file" type="file" accept=".crx,.zip,application/zip">
+            </div>
+            <p class="ps-hint">Chromium profiles load enabled extensions on launch. Firefox: files are stored for manual install.</p>
+            <div class="ps-modal-foot">
+              <button type="submit" class="ps-btn primary sm">Upload</button>
+            </div>
+          </form>
         </div>
         <div class="ps-tabpane" data-pane="overview">
           <div id="edit-overview" class="ps-kv"></div>
