@@ -1218,6 +1218,80 @@ def create_app() -> FastAPI:
                 "skipped": result.get("skipped", []),
                 "errors": result.get("errors", [])}
 
+    @app.post("/api/profiles/export")
+    def export_profiles(request: Request, body: dict):
+        """Export profiles as JSON (for backup/sharing).
+
+        Body: {"names": ["p1", "p2"]} or {"all": true}.
+        Passwords are never included.
+        """
+        from fastapi.responses import JSONResponse
+        names = body.get("names") or []
+        if body.get("all"):
+            profiles = _profile_manager.list()
+        else:
+            profiles = []
+            for n in names:
+                try:
+                    profiles.append(_profile_manager.get(n))
+                except KeyError:
+                    pass
+        # Strip sensitive fields.
+        clean = []
+        for p in profiles:
+            pc = dict(p)
+            fp = dict(pc.get("fingerprint") or {})
+            px = fp.get("proxy")
+            if isinstance(px, dict):
+                px = {k: v for k, v in px.items() if k != "password"}
+                fp["proxy"] = px
+            pc["fingerprint"] = fp
+            clean.append(pc)
+        _activity_log.record(_actor(request), "profile.export",
+                             detail="%d profiles" % len(clean))
+        return JSONResponse({
+            "exported_at": time.time(),
+            "count": len(clean),
+            "profiles": clean,
+        })
+
+    @app.post("/api/profiles/import", status_code=201)
+    def import_profiles(request: Request, body: dict):
+        """Import profiles from a JSON export (see /api/profiles/export).
+
+        Skips names that already exist. Returns created/skipped lists.
+        """
+        items = body.get("profiles") or []
+        created, skipped = [], []
+        for item in items:
+            name = (item.get("name") or "").strip()
+            if not name:
+                skipped.append("(unnamed)")
+                continue
+            try:
+                _profile_manager.get(name)
+                skipped.append(name)
+                continue
+            except KeyError:
+                pass
+            try:
+                fp = item.get("fingerprint") or {}
+                proxy = fp.get("proxy")
+                proxy_name = proxy.get("name") if isinstance(proxy, dict) else None
+                _profile_manager.create(
+                    name,
+                    os=item.get("os", "windows"),
+                    proxy=proxy_name,
+                    client_tag=item.get("client_tag"),
+                    engine=item.get("engine", "camoufox"),
+                )
+                created.append(name)
+            except (ValueError, KeyError):
+                skipped.append(name)
+        _activity_log.record(_actor(request), "profile.import",
+                             detail="%d created" % len(created))
+        return {"created": created, "skipped": skipped}
+
     # -- migration: import profiles from other anti-detect browsers -------
     @app.post("/api/migrate/adspower")
     async def migrate_adspower_endpoint(file: UploadFile = File(...),

@@ -93,6 +93,10 @@ const api = {
   rpaJobs: () => req("GET", "/api/rpa/jobs").then(d => d.jobs || d || []),
   activity: () => req("GET", "/api/activity").then(d => d.activity || []),
   clearActivity: () => req("DELETE", "/api/activity"),
+  exportProfiles: (names) => req("POST", "/api/profiles/export",
+    JSON.stringify({ names })),
+  importProfiles: (data) => req("POST", "/api/profiles/import",
+    JSON.stringify(data)),
   bulkImport: (file, clientTag) => {
     const fd = new FormData();
     fd.append("file", file);
@@ -412,6 +416,25 @@ async function bulkDelete() {
   else toast(`Deleted ${ok} profiles`, "success");
   await refreshProfiles();
   renderBulkBar();
+}
+
+async function bulkExport() {
+  const names = selectedNames();
+  if (names.length === 0) return;
+  try {
+    const data = await api.exportProfiles(names);
+    const blob = new Blob([JSON.stringify(data, null, 2)],
+      { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `profiles-export-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast(`Exported ${data.count} profiles`, "success");
+  } catch (e) { toast("Export failed: " + (e.message || e), "error"); }
 }
 
 function openBulkEdit() {
@@ -863,25 +886,41 @@ $("form-new").addEventListener("submit", async (e) => {
 $("form-bulk").addEventListener("submit", async (e) => {
   e.preventDefault();
   const file = $("bulk-file").files[0];
-  if (!file) { toast("Choose a CSV file first.", "error"); return; }
+  if (!file) { toast("Choose a file first.", "error"); return; }
   const tag = $("bulk-tag").value.trim();
   const box = $("bulk-result");
   box.hidden = false;
   box.innerHTML = "Importing&hellip;";
+  const isJson = file.name.toLowerCase().endsWith(".json");
   try {
-    const res = await api.bulkImport(file, tag);
-    const created = res.created || 0, skipped = res.skipped || 0;
-    const errors = Array.isArray(res.errors) ? res.errors : [];
-    box.innerHTML =
-      `<span class="ok">Created: ${created}</span> &middot; ` +
-      `<span class="warn">Skipped: ${skipped}</span> &middot; ` +
-      `<span class="${errors.length ? "err" : ""}">Errors: ${errors.length}</span>` +
-      (errors.length
-        ? `<ul>${errors.slice(0, 12).map(x => `<li>${esc(typeof x === "string" ? x : JSON.stringify(x))}</li>`).join("")}` +
-          (errors.length > 12 ? `<li>&hellip;and ${errors.length - 12} more</li>` : "") + `</ul>`
-        : "");
-    toast(`Import done: ${created} created, ${skipped} skipped, ${errors.length} errors.`,
-      errors.length ? "info" : "success");
+    let created, skipped, errors;
+    if (isJson) {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      const res = await api.importProfiles(data);
+      created = (res.created || []).length;
+      skipped = (res.skipped || []).length;
+      errors = [];
+      box.innerHTML =
+        `<span class="ok">Created: ${created}</span> &middot; ` +
+        `<span class="warn">Skipped: ${skipped}</span>` +
+        (res.created.length
+          ? `<div class="dim">${res.created.map(esc).join(", ")}</div>` : "");
+    } else {
+      const res = await api.bulkImport(file, tag);
+      created = res.created || 0; skipped = res.skipped || 0;
+      errors = Array.isArray(res.errors) ? res.errors : [];
+      box.innerHTML =
+        `<span class="ok">Created: ${created}</span> &middot; ` +
+        `<span class="warn">Skipped: ${skipped}</span> &middot; ` +
+        `<span class="${errors.length ? "err" : ""}">Errors: ${errors.length}</span>` +
+        (errors.length
+          ? `<ul>${errors.slice(0, 12).map(x => `<li>${esc(typeof x === "string" ? x : JSON.stringify(x))}</li>`).join("")}` +
+            (errors.length > 12 ? `<li>&hellip;and ${errors.length - 12} more</li>` : "") + `</ul>`
+          : "");
+    }
+    toast(`Import done: ${created} created, ${skipped} skipped.`,
+      "success");
     await refreshProfiles();
   } catch (err) {
     box.innerHTML = `<span class="err">Import failed: ${esc(err.message || err)}</span>`;
@@ -1694,6 +1733,7 @@ $("btn-rpa-create").addEventListener("click", async () => {
   $("bulk-launch").addEventListener("click", bulkLaunch);
   $("bulk-stop").addEventListener("click", bulkStop);
   $("bulk-edit").addEventListener("click", openBulkEdit);
+  $("bulk-export").addEventListener("click", bulkExport);
   $("bulk-delete").addEventListener("click", bulkDelete);
   $("bulk-clear").addEventListener("click", () => {
     state.selected.clear();

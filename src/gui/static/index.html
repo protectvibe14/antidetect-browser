@@ -88,6 +88,7 @@
           <button class="ps-btn primary sm" id="bulk-launch">&#9654; Launch</button>
           <button class="ps-btn ghost sm" id="bulk-stop">&#9632; Stop</button>
           <button class="ps-btn ghost sm" id="bulk-edit">&#9998; Edit</button>
+          <button class="ps-btn ghost sm" id="bulk-export">&#8681; Export</button>
           <button class="ps-btn danger sm" id="bulk-delete">&#10005; Delete</button>
           <button class="ps-btn ghost sm" id="bulk-clear">Clear</button>
         </div>
@@ -293,13 +294,14 @@
       </div>
       <form id="form-bulk" class="ps-form">
         <div class="ps-field">
-          <label class="ps-flabel" for="bulk-file">CSV file</label>
-          <input class="ps-in" id="bulk-file" type="file" accept=".csv,text/csv" required>
+          <label class="ps-flabel" for="bulk-file">CSV or JSON file</label>
+          <input class="ps-in" id="bulk-file" type="file" accept=".csv,.json,text/csv,application/json" required>
         </div>
         <div class="ps-field">
-          <label class="ps-flabel" for="bulk-tag">Client tag <span class="ps-flabel-hint">(optional)</span></label>
+          <label class="ps-flabel" for="bulk-tag">Client tag <span class="ps-flabel-hint">(optional, CSV only)</span></label>
           <input class="ps-in" id="bulk-tag" type="text" placeholder="e.g. acme">
         </div>
+        <p class="ps-hint">CSV: name,os,engine columns. JSON: export file from &#8681; Export.</p>
         <div id="bulk-result" class="ps-bulk-result" hidden></div>
         <div class="ps-modal-foot">
           <button type="button" class="ps-btn ghost" data-close>Cancel</button>
