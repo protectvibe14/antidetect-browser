@@ -463,6 +463,103 @@ def cmd_health_check(args):
         print("network detail: %s" % network["reason"])
 
 
+# --------------------------------------------------------------------------- #
+# rpa commands (Phase 7)
+# --------------------------------------------------------------------------- #
+
+def _rpa_manager():
+    """Return an RPAManager instance (lazy import)."""
+    from src.rpa.manager import RPAManager
+    return RPAManager()
+
+
+def cmd_rpa_list(args):
+    """List RPA recipes."""
+    recipes = _rpa_manager().list()
+    if not recipes:
+        print("no recipes")
+        return
+    for r in recipes:
+        print("%s  %s  (%d steps, %s)" % (
+            r["id"], r["name"], r["step_count"], r.get("base_url", "")))
+
+
+def cmd_rpa_run(args):
+    """Run a recipe on a profile; stream logs until the job finishes."""
+    mgr = _rpa_manager()
+    try:
+        recipe_id = mgr.resolve_id(args.recipe)
+    except KeyError:
+        _fail("recipe not found: %r" % args.recipe)
+    job_id = mgr.run(recipe_id, args.profile, data_path=args.data,
+                     headless=not args.visible)
+    print("job: %s" % job_id)
+    seen = 0
+    try:
+        while True:
+            st = mgr.job_status(job_id)
+            for line in st["log_tail"][seen:]:
+                print(line)
+            seen = len(st["log_tail"])
+            pa = st.get("pending_action")
+            if pa:
+                q = pa.get("question") or pa.get("type") or "input required"
+                print("!! operator action needed [%s]: %s" % (pa.get("type"), q))
+                print("   answer via: rpa answer %s <text>  (or the dashboard)" % job_id)
+            status = st["status"]
+            if status in ("done", "error", "stopped"):
+                summary = st.get("summary") or {}
+                if "success" in summary:
+                    print("summary: %d success, %d failed"
+                          % (summary.get("success", 0), summary.get("failed", 0)))
+                elif summary.get("error"):
+                    print("summary: error: %s" % summary["error"])
+                print("status: %s" % status)
+                return
+            time.sleep(2)
+    except KeyboardInterrupt:
+        print("\nrequesting stop...", file=sys.stderr)
+        mgr.stop_job(job_id)
+
+
+def cmd_rpa_status(args):
+    """Print a job status snapshot."""
+    mgr = _rpa_manager()
+    try:
+        st = mgr.job_status(args.job_id)
+    except KeyError:
+        _fail("job not found: %r" % args.job_id)
+    print("job: %s" % st["job_id"])
+    print("recipe: %s (%s)" % (st.get("recipe_name") or st["recipe_id"],
+                               st["recipe_id"]))
+    print("profile: %s" % st["profile_name"])
+    print("status: %s" % st["status"])
+    summary = st.get("summary") or {}
+    if "success" in summary:
+        print("summary: %d success, %d failed"
+              % (summary.get("success", 0), summary.get("failed", 0)))
+    elif summary.get("error"):
+        print("error: %s" % summary["error"])
+    pa = st.get("pending_action")
+    if pa:
+        print("pending action: %s — %s" % (pa.get("type"),
+              pa.get("question") or "(no question text)"))
+    for line in st["log_tail"][-20:]:
+        print("  | " + line)
+
+
+def cmd_rpa_answer(args):
+    """Answer a pending human-handoff question for a job."""
+    mgr = _rpa_manager()
+    try:
+        ok = mgr.answer_action(args.job_id, args.answer)
+    except KeyError:
+        _fail("job not found: %r" % args.job_id)
+    if not ok:
+        _fail("no pending action for job %r" % args.job_id)
+    print("answer sent")
+
+
 def cmd_setup_check(args):
     """Verify the runtime environment; exit 0 only if everything is OK."""
     del args
@@ -628,6 +725,28 @@ def build_parser():
     p_warmup.add_argument("--no-headless", dest="headless", action="store_false",
                           help="run with a visible browser window")
     p_warmup.set_defaults(func=cmd_warmup)
+
+    # rpa --------------------------------------------------------------- #
+    p_rpa = subs.add_parser("rpa", help="recipe-driven browser automation")
+    r_subs = p_rpa.add_subparsers(dest="rpa_cmd", required=True)
+    r_list = r_subs.add_parser("list", help="list RPA recipes")
+    r_list.set_defaults(func=cmd_rpa_list)
+    r_run = r_subs.add_parser("run", help="run a recipe on a profile")
+    r_run.add_argument("recipe", help="recipe id or name")
+    r_run.add_argument("--profile", required=True, help="profile name to run on")
+    r_run.add_argument("--data", default=None,
+                       help="CSV/XLSX data file (optional)")
+    r_run.add_argument("--visible", action="store_true",
+                       help="run with a visible browser window (default: headless)")
+    r_run.set_defaults(func=cmd_rpa_run)
+    r_status = r_subs.add_parser("status", help="show an RPA job's status")
+    r_status.add_argument("job_id", help="job id from 'rpa run'")
+    r_status.set_defaults(func=cmd_rpa_status)
+    r_answer = r_subs.add_parser("answer",
+                                 help="answer a pending human-handoff question")
+    r_answer.add_argument("job_id", help="job id from 'rpa run'")
+    r_answer.add_argument("answer", help="answer text for the pending action")
+    r_answer.set_defaults(func=cmd_rpa_answer)
 
     # setup ------------------------------------------------------------- #
     p_setup = subs.add_parser("setup", help="environment checks")

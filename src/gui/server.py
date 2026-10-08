@@ -596,6 +596,128 @@ def create_app() -> FastAPI:
             raise HTTPException(409, result["error"])
         return {"imported": result.get("imported", 0)}
 
+    # -- RPA (Phase 7) ------------------------------------------------------
+    # Additive: recipe CRUD, run control, and live page inspector for the
+    # RPA engine (src/rpa). Adapted from python_rpa_ui (Apache-2.0);
+    # its unsalted-SHA-256 auth.py is NOT used here.
+    def _rpa_manager():
+        """Return a process-wide RPAManager (lazy; never at import time)."""
+        global _rpa_manager_singleton
+        try:
+            return _rpa_manager_singleton
+        except NameError:
+            from src.rpa.manager import RPAManager
+            _rpa_manager_singleton = RPAManager()
+            return _rpa_manager_singleton
+
+    class RpaRunBody(BaseModel):
+        """Body for POST /api/rpa/run."""
+        recipe_id: str
+        profile_name: str
+        data_path: str | None = None
+        headless: bool = True
+
+    class RpaAnswerBody(BaseModel):
+        """Body for POST /api/rpa/jobs/{id}/answer."""
+        answer: str
+
+    class RpaInspectBody(BaseModel):
+        """Body for POST /api/rpa/inspect."""
+        profile_name: str
+        url: str
+        login_steps: list | None = None
+        headless: bool = True
+
+    @app.get("/api/rpa/recipes")
+    def rpa_list_recipes():
+        """List RPA recipes (metadata)."""
+        return {"recipes": _rpa_manager().list()}
+
+    @app.post("/api/rpa/recipes", status_code=201)
+    def rpa_create_recipe(body: dict):
+        """Create an RPA recipe from a full recipe dict; returns its id."""
+        try:
+            rid = _rpa_manager().create(body.get("name", "untitled"),
+                                        body)
+        except Exception as exc:
+            raise HTTPException(422, "invalid recipe: %s" % exc)
+        return {"id": rid}
+
+    @app.get("/api/rpa/recipes/{recipe_id}")
+    def rpa_get_recipe(recipe_id: str):
+        """Return a full recipe dict."""
+        try:
+            return _rpa_manager().get(recipe_id)
+        except KeyError:
+            raise HTTPException(404, "recipe not found")
+
+    @app.delete("/api/rpa/recipes/{recipe_id}")
+    def rpa_delete_recipe(recipe_id: str):
+        """Delete a recipe."""
+        if not _rpa_manager().delete(recipe_id):
+            raise HTTPException(404, "recipe not found")
+        return {"deleted": recipe_id}
+
+    @app.post("/api/rpa/run", status_code=202)
+    def rpa_run(body: RpaRunBody):
+        """Start a recipe run on a profile. Returns immediately with job_id."""
+        try:
+            recipe_id = _rpa_manager().resolve_id(body.recipe_id)
+        except KeyError:
+            raise HTTPException(404, "recipe not found")
+        job_id = _rpa_manager().run(recipe_id, body.profile_name,
+                                    data_path=body.data_path,
+                                    headless=bool(body.headless))
+        return {"job_id": job_id}
+
+    @app.get("/api/rpa/jobs")
+    def rpa_list_jobs():
+        """List known RPA jobs (newest first)."""
+        return {"jobs": _rpa_manager().jobs()}
+
+    @app.get("/api/rpa/jobs/{job_id}")
+    def rpa_job_status(job_id: str):
+        """Return a job status snapshot (status, summary, pending action,
+        log tail)."""
+        try:
+            return _rpa_manager().job_status(job_id)
+        except KeyError:
+            raise HTTPException(404, "job not found")
+
+    @app.post("/api/rpa/jobs/{job_id}/stop")
+    def rpa_job_stop(job_id: str):
+        """Ask a running job to stop after the current row."""
+        try:
+            _rpa_manager().stop_job(job_id)
+        except KeyError:
+            raise HTTPException(404, "job not found")
+        return {"stopped": job_id}
+
+    @app.post("/api/rpa/jobs/{job_id}/answer")
+    def rpa_job_answer(job_id: str, body: RpaAnswerBody):
+        """Answer a pending human-handoff question (captcha/human_input/ask)."""
+        try:
+            ok = _rpa_manager().answer_action(job_id, body.answer)
+        except KeyError:
+            raise HTTPException(404, "job not found")
+        if not ok:
+            raise HTTPException(409, "no pending action for this job")
+        return {"answered": job_id}
+
+    @app.post("/api/rpa/inspect")
+    def rpa_inspect(body: RpaInspectBody):
+        """Inspect a live page on a profile: launch, navigate, scrape DOM,
+        close. Returns inputs/selects/textareas/buttons (+ final_url)."""
+        from src.rpa.inspector import inspect_url
+        try:
+            return inspect_url(body.profile_name, body.url,
+                               login_steps=body.login_steps,
+                               headless=bool(body.headless))
+        except RuntimeError as exc:
+            raise HTTPException(404, str(exc))
+        except Exception as exc:
+            raise HTTPException(500, "inspect failed: %s" % exc)
+
     # -- frontend statics -------------------------------------------------
     # Mounted LAST so /api/* routes always win. The directory may be empty
     # (frontend worker creates the bundle later); makedirs keeps StaticFiles

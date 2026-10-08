@@ -71,6 +71,16 @@ const api = {
   syncStop: (id) => req("POST", "/api/sync/stop", JSON.stringify({ session_id: id })),
   syncStatus: (id) => req("GET", "/api/sync/status" + (id ? "?session_id=" + encodeURIComponent(id) : "")),
   syncTyping: (id, enabled) => req("POST", "/api/sync/typing", JSON.stringify({ session_id: id, enabled })),
+  /* RPA (Phase 7) */
+  rpaRecipes: () => req("GET", "/api/rpa/recipes").then(d => d.recipes || []),
+  rpaCreateRecipe: (body) => req("POST", "/api/rpa/recipes", JSON.stringify(body)),
+  rpaDeleteRecipe: (id) => req("DELETE", "/api/rpa/recipes/" + encodeURIComponent(id)),
+  rpaRun: (body) => req("POST", "/api/rpa/run", JSON.stringify(body)),
+  rpaJobs: () => req("GET", "/api/rpa/jobs").then(d => d.jobs || []),
+  rpaJobStatus: (id) => req("GET", "/api/rpa/jobs/" + encodeURIComponent(id)),
+  rpaJobStop: (id) => req("POST", "/api/rpa/jobs/" + encodeURIComponent(id) + "/stop"),
+  rpaJobAnswer: (id, answer) =>
+    req("POST", "/api/rpa/jobs/" + encodeURIComponent(id) + "/answer", JSON.stringify({ answer })),
 };
 
 /* ---------------- State ---------------- */
@@ -708,6 +718,156 @@ $("sync-typing").addEventListener("change", async (e) => {
   } catch (err) {
     toast("Typing toggle failed: " + (err.message || err), "error");
   }
+});
+
+/* ---------------- RPA (Phase 7) ---------------- */
+const rpa = { recipes: [], pollTimer: null };
+
+function rpaProfileOptions() {
+  const sel = $("rpa-profile");
+  sel.innerHTML = (state.profiles || [])
+    .map(p => `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join("")
+    || `<option value="">— no profiles —</option>`;
+}
+
+function renderRpaRecipes(recipes) {
+  rpa.recipes = recipes || [];
+  const box = $("rpa-recipes");
+  if (!rpa.recipes.length) {
+    box.innerHTML = `<div class="ps-empty">No recipes yet — paste a recipe JSON below and save it.</div>`;
+    return;
+  }
+  box.innerHTML = rpa.recipes.map(r => `
+    <div class="ps-check-row" style="display:flex;gap:8px;align-items:center;margin:4px 0">
+      <span style="flex:1"><strong>${esc(r.name)}</strong>
+        <span class="ps-flabel-hint">${esc(r.id)} · ${r.step_count} step(s) · ${esc(r.base_url || "")}</span></span>
+      <button class="ps-btn ghost" data-rpa-run="${esc(r.id)}">Run</button>
+      <button class="ps-btn ghost" data-rpa-del="${esc(r.id)}" title="Delete">✕</button>
+    </div>`).join("");
+  box.querySelectorAll("[data-rpa-run]").forEach(b =>
+    b.addEventListener("click", () => rpaStartRun(b.getAttribute("data-rpa-run"))));
+  box.querySelectorAll("[data-rpa-del]").forEach(b =>
+    b.addEventListener("click", async () => {
+      const id = b.getAttribute("data-rpa-del");
+      if (!confirm("Delete recipe " + id + "?")) return;
+      try { await api.rpaDeleteRecipe(id); toast("Recipe deleted.", "success"); }
+      catch (err) { toast("Delete failed: " + (err.message || err), "error"); }
+      await renderRpaRecipes(await api.rpaRecipes());
+    }));
+}
+
+async function rpaStartRun(recipeId) {
+  const profile = $("rpa-profile").value;
+  if (!profile) { toast("Pick a profile first.", "error"); return; }
+  const dataPath = $("rpa-data").value.trim() || null;
+  const headless = $("rpa-headless").value === "1";
+  try {
+    const res = await api.rpaRun({ recipe_id: recipeId, profile_name: profile,
+                                   data_path: dataPath, headless });
+    toast("RPA job started: " + res.job_id, "success");
+    await renderRpaJobs();
+  } catch (err) { toast("Run failed: " + (err.message || err), "error"); }
+}
+
+function renderRpaJobs(jobs) {
+  const box = $("rpa-jobs");
+  if (!jobs || !jobs.length) {
+    box.innerHTML = `<div class="ps-empty">No jobs yet.</div>`;
+    return;
+  }
+  box.innerHTML = jobs.map(j => {
+    const pa = j.pending_action;
+    const ask = pa ? `
+      <div style="margin-top:6px;padding:6px;border:1px dashed var(--ps-accent,#7c5cff);border-radius:6px">
+        <div><strong>Operator needed:</strong> ${esc(pa.question || pa.type || "input")}</div>
+        <div style="display:flex;gap:6px;margin-top:4px">
+          <input class="ps-in" style="flex:1" id="rpa-ans-${esc(j.job_id)}" placeholder="Type the answer…">
+          <button class="ps-btn primary" data-rpa-ans="${esc(j.job_id)}">Answer</button>
+        </div>
+      </div>` : "";
+    const stop = (j.status === "running" || j.status === "starting")
+      ? ` <button class="ps-btn ghost" data-rpa-stop="${esc(j.job_id)}">Stop</button>` : "";
+    return `
+    <div class="ps-check-row" style="margin:6px 0;padding:6px;border-bottom:1px solid rgba(255,255,255,.06)">
+      <div style="display:flex;gap:8px;align-items:center">
+        <span style="flex:1"><strong>${esc(j.recipe_name || j.recipe_id)}</strong>
+          <span class="ps-flabel-hint">${esc(j.job_id)} · ${esc(j.profile_name)} ·
+          ${esc(j.status)} · ${esc(relTime(j.started_at))}</span></span>
+        <button class="ps-btn ghost" data-rpa-detail="${esc(j.job_id)}">Logs</button>${stop}
+      </div>
+      ${ask}
+      <pre id="rpa-log-${esc(j.job_id)}" hidden
+        style="max-height:160px;overflow:auto;font-size:11px;white-space:pre-wrap"></pre>
+    </div>`;
+  }).join("");
+  box.querySelectorAll("[data-rpa-ans]").forEach(b =>
+    b.addEventListener("click", async () => {
+      const id = b.getAttribute("data-rpa-ans");
+      const inp = $("rpa-ans-" + id);
+      try {
+        await api.rpaJobAnswer(id, inp.value);
+        toast("Answer sent.", "success");
+      } catch (err) { toast("Answer failed: " + (err.message || err), "error"); }
+      await renderRpaJobs(await api.rpaJobs());
+    }));
+  box.querySelectorAll("[data-rpa-stop]").forEach(b =>
+    b.addEventListener("click", async () => {
+      try { await api.rpaJobStop(b.getAttribute("data-rpa-stop")); toast("Stop requested.", "success"); }
+      catch (err) { toast("Stop failed: " + (err.message || err), "error"); }
+      await renderRpaJobs(await api.rpaJobs());
+    }));
+  box.querySelectorAll("[data-rpa-detail]").forEach(b =>
+    b.addEventListener("click", async () => {
+      const id = b.getAttribute("data-rpa-detail");
+      const pre = $("rpa-log-" + id);
+      if (!pre.hidden) { pre.hidden = true; return; }
+      try {
+        const st = await api.rpaJobStatus(id);
+        pre.textContent = (st.log_tail || []).join("\n") || "(no logs)";
+        const sum = st.summary || {};
+        if (sum.success !== undefined)
+          pre.textContent += `\n— success: ${sum.success}, failed: ${sum.failed}`;
+        pre.hidden = false;
+      } catch (err) { toast("Could not load logs: " + (err.message || err), "error"); }
+    }));
+}
+
+async function rpaRefreshAll() {
+  try { renderRpaRecipes(await api.rpaRecipes()); }
+  catch (err) { $("rpa-recipes").innerHTML = `<div class="ps-empty">Load failed: ${esc(err.message || err)}</div>`; }
+  try { renderRpaJobs(await api.rpaJobs()); } catch { /* non-fatal */ }
+}
+
+function rpaStartPoll() {
+  rpaStopPoll();
+  rpa.pollTimer = setInterval(async () => {
+    if ($("modal-rpa").hidden) { rpaStopPoll(); return; }
+    try { renderRpaJobs(await api.rpaJobs()); } catch { /* keep polling */ }
+  }, 3000);
+}
+function rpaStopPoll() {
+  if (rpa.pollTimer) { clearInterval(rpa.pollTimer); rpa.pollTimer = null; }
+}
+
+$("btn-rpa").addEventListener("click", async () => {
+  openModal("modal-rpa");
+  rpaProfileOptions();
+  await rpaRefreshAll();
+  rpaStartPoll();
+});
+$("btn-rpa-refresh").addEventListener("click", rpaRefreshAll);
+$("btn-rpa-create").addEventListener("click", async () => {
+  const raw = $("rpa-recipe-json").value.trim();
+  if (!raw) { toast("Paste a recipe JSON first.", "error"); return; }
+  let body;
+  try { body = JSON.parse(raw); }
+  catch { toast("Invalid JSON.", "error"); return; }
+  try {
+    const res = await api.rpaCreateRecipe(body);
+    toast("Recipe saved: " + res.id, "success");
+    $("rpa-recipe-json").value = "";
+    renderRpaRecipes(await api.rpaRecipes());
+  } catch (err) { toast("Save failed: " + (err.message || err), "error"); }
 });
 
 /* ---------------- Boot ---------------- */
