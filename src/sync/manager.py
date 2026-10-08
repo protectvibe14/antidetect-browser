@@ -597,15 +597,24 @@ class SyncManager:
         if master_name in followers:
             raise ValueError("master %r cannot also be a follower" % master_name)
         # Resolve personas up front so bad names fail fast, before launch.
+        # Synchronizer is Camoufox-only: refuse non-Camoufox profiles.
         try:
-            self.persona_getter(master_name)
+            master_persona = self.persona_getter(master_name)
         except Exception as exc:
             raise ValueError("unknown master profile %r: %s" % (master_name, exc))
+        if (master_persona.get("engine") or "camoufox") != "camoufox":
+            raise ValueError(
+                "sync is Camoufox-only; master %r uses engine %r"
+                % (master_name, master_persona.get("engine")))
         for name in followers:
             try:
-                self.persona_getter(name)
+                persona = self.persona_getter(name)
             except Exception as exc:
                 raise ValueError("unknown follower profile %r: %s" % (name, exc))
+            if (persona.get("engine") or "camoufox") != "camoufox":
+                raise ValueError(
+                    "sync is Camoufox-only; follower %r uses engine %r"
+                    % (name, persona.get("engine")))
         with self._lock:
             busy = {s.master_name for s in self._sessions.values()}
             busy.update(n for s in self._sessions.values() for n in s.follower_names)

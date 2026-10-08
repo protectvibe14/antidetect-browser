@@ -562,6 +562,22 @@ def create_app() -> FastAPI:
             persona = _profile_manager.get(name)
         except KeyError:
             raise HTTPException(404, "no profile named '%s'" % name)
+        # Refuse if a sync session holds this profile (it launched its own
+        # browser instance; two instances on one profile dir collide on the
+        # browser lock).
+        try:
+            for session in _sync_manager.status().get("sessions", []):
+                held = [session.get("master")] + list(
+                    session.get("followers", {}).keys())
+                if name in held:
+                    raise HTTPException(
+                        409, "profile '%s' is in active sync session %s; "
+                             "stop the sync session first"
+                        % (name, session.get("session_id")))
+        except HTTPException:
+            raise
+        except Exception:
+            pass
         with _running_lock:
             entry = _running.get(name)
             if entry is not None and entry["status"] in ("running",
