@@ -60,6 +60,9 @@ const api = {
   updateProxy: (name, p) => req("PUT", "/api/proxies/" + encodeURIComponent(name), JSON.stringify(p)),
   deleteProxy: (name) => req("DELETE", "/api/proxies/" + encodeURIComponent(name)),
   testProxy: (name) => req("POST", "/api/proxies/" + encodeURIComponent(name) + "/test"),
+  testCustomProxy: (ptype, host, port, username, password) =>
+    req("POST", "/api/proxies/test-custom", JSON.stringify({
+      type: ptype, host, port, username, password })),
   fetchFree: (max) => req("POST", "/api/proxies/fetch-free",
     JSON.stringify({ max: max || 20 })),
   randomUA: (os, browser) =>
@@ -483,6 +486,59 @@ async function submitBulkEdit(e) {
   $("modal-bulk-edit").hidden = true;
   await refreshProfiles();
 }
+
+/* ---------------- Edit Proxy tab (AdsPower-style) ---------------- */
+document.querySelectorAll("#edit-proxy-mode .ps-seg-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("#edit-proxy-mode .ps-seg-btn").forEach(b =>
+      b.classList.toggle("active", b === btn));
+    const custom = btn.dataset.val === "custom";
+    $("edit-proxy-saved").hidden = custom;
+    $("edit-proxy-custom").hidden = !custom;
+  });
+});
+
+$("edit-px-test").addEventListener("click", async () => {
+  const resEl = $("edit-px-result");
+  const custom = !$("edit-proxy-custom").hidden;
+  resEl.textContent = "Testing…";
+  resEl.style.color = "var(--dim)";
+  try {
+    let ok, latency;
+    if (custom) {
+      const host = $("edit-px-host").value.trim();
+      const port = parseInt($("edit-px-port").value, 10);
+      if (!host || !port) {
+        resEl.textContent = "Enter host and port first.";
+        resEl.style.color = "#ff453a";
+        return;
+      }
+      const r = await api.testCustomProxy(
+        $("edit-px-type").value || "http", host, port,
+        $("edit-px-user").value.trim(), $("edit-px-pass").value);
+      ok = r.ok; latency = r.latency_ms;
+    } else {
+      const name = $("edit-proxy").value;
+      if (!name) {
+        resEl.textContent = "Select a proxy first.";
+        resEl.style.color = "#ff453a";
+        return;
+      }
+      const r = await api.testProxy(name);
+      ok = r.ok; latency = r.latency_ms;
+    }
+    if (ok) {
+      resEl.textContent = `✓ OK${latency != null ? ` (${latency}ms)` : ""}`;
+      resEl.style.color = "#30d158";
+    } else {
+      resEl.textContent = "✗ Failed";
+      resEl.style.color = "#ff453a";
+    }
+  } catch (err) {
+    resEl.textContent = "Error: " + (err.message || err);
+    resEl.style.color = "#ff453a";
+  }
+});
 
 /* ---------------- Full-page New Profile ---------------- */
 function showView(name) {
@@ -1226,6 +1282,18 @@ function fillEditForm(prof) {
     }
     sel.value = cur;
   });
+  // reset custom proxy tab to saved mode
+  document.querySelectorAll("#edit-proxy-mode .ps-seg-btn").forEach(b =>
+    b.classList.toggle("active", b.dataset.val === "saved"));
+  $("edit-proxy-saved").hidden = false;
+  $("edit-proxy-custom").hidden = true;
+  $("edit-px-type").value = "";
+  $("edit-px-host").value = "";
+  $("edit-px-port").value = "";
+  $("edit-px-user").value = "";
+  $("edit-px-pass").value = "";
+  $("edit-px-name").value = "";
+  $("edit-px-result").textContent = "";
   // fingerprint
   $("edit-tz").value = fp.timezone || "";
   $("edit-locale").value = fp.locale || "";
@@ -1263,11 +1331,33 @@ async function submitEdit(e) {
   e.preventDefault();
   const name = $("edit-name").value;
   const num = id => { const v = $(id).value.trim(); return v === "" ? null : parseInt(v, 10); };
+  // Proxy: saved or custom (AdsPower-style).
+  const customProxy = !$("edit-proxy-custom").hidden;
+  let proxy_name = $("edit-proxy").value;
+  let custom_proxy = null;
+  if (customProxy) {
+    const host = $("edit-px-host").value.trim();
+    const port = parseInt($("edit-px-port").value, 10);
+    const ptype = $("edit-px-type").value;
+    if (ptype && host && port) {
+      const saveName = $("edit-px-name").value.trim();
+      custom_proxy = {
+        type: ptype, host, port,
+        username: $("edit-px-user").value.trim() || null,
+        password: $("edit-px-pass").value || null,
+        save_name: saveName || null,
+      };
+      proxy_name = null; // custom takes precedence
+    } else if (!ptype) {
+      proxy_name = null; // No Proxy selected
+    }
+  }
   const payload = {
     client_tag: $("edit-tag").value.trim(),
     os: $("edit-os").value,
     engine: $("edit-engine").value,
-    proxy_name: $("edit-proxy").value,
+    proxy_name: proxy_name,
+    custom_proxy: custom_proxy,
     group_name: $("edit-group").value || null,
     timezone: $("edit-tz").value.trim() || null,
     locale: $("edit-locale").value.trim() || null,

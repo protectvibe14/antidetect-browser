@@ -309,6 +309,7 @@ class ProfileUpdate(BaseModel):
     regenerate_fingerprint: bool = False
     platform_acct: str | None = None
     startup_urls: list | None = None
+    custom_proxy: dict | None = None  # {type, host, port, username, password, save_name}
 
 
 class SyncStart(BaseModel):
@@ -662,6 +663,35 @@ def create_app() -> FastAPI:
                 except KeyError:
                     raise HTTPException(
                         400, "unknown proxy_name '%s'" % body.proxy_name)
+        if body.custom_proxy is not None:
+            cp = body.custom_proxy
+            ptype = (cp.get("type") or "").strip()
+            host = (cp.get("host") or "").strip()
+            try:
+                port = int(cp.get("port", 0))
+            except (ValueError, TypeError):
+                port = 0
+            if not ptype:
+                fields["proxy"] = None
+            elif not host or not (1 <= port <= 65535):
+                raise HTTPException(400, "custom proxy needs host and port")
+            else:
+                if ptype not in ("http", "https", "socks5", "socks4"):
+                    raise HTTPException(400, "bad proxy type '%s'" % ptype)
+                proxy = {"type": ptype, "host": host, "port": port,
+                         "username": cp.get("username") or None,
+                         "password": cp.get("password") or None}
+                save_name = (cp.get("save_name") or "").strip()
+                if save_name:
+                    try:
+                        _proxy_manager.add(
+                            save_name, host, port, ptype=ptype,
+                            username=proxy["username"],
+                            password=proxy["password"])
+                        proxy["name"] = save_name
+                    except ValueError:
+                        pass  # name taken — attach without saving
+                fields["proxy"] = proxy
         if body.group_name is not None:
             group_name = body.group_name.strip() or None
             if group_name is not None:
@@ -1109,10 +1139,35 @@ def create_app() -> FastAPI:
         except Exception as exc:
             raise HTTPException(500, "UA generation failed: %s" % exc)
 
+    @app.post("/api/proxies/test-custom")
+    def test_custom_proxy(payload: dict):
+        """Test a custom proxy (host/port) without saving it.
+
+        Body: {"type", "host", "port", "username", "password"}.
+        Returns {"ok", "latency_ms"}.
+        """
+        import socket
+        import time
+        host = (payload or {}).get("host", "").strip()
+        try:
+            port = int((payload or {}).get("port", 0))
+        except (ValueError, TypeError):
+            port = 0
+        if not host or not (1 <= port <= 65535):
+            raise HTTPException(400, "valid host and port required")
+        start = time.monotonic()
+        try:
+            sock = socket.create_connection((host, port), timeout=5)
+            sock.close()
+            ok = True
+        except Exception:
+            ok = False
+        latency = int((time.monotonic() - start) * 1000) if ok else None
+        return {"ok": ok, "latency_ms": latency}
+
     @app.post("/api/proxies/fetch-free")
     def fetch_free_proxies(request: Request, payload: dict = None):
         """Fetch free proxies for TESTING and add working ones.
-
         Body: {"max": 20}. WARNING: free proxies are unreliable and
         often flagged — testing only, never for production/client use.
         """

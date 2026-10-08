@@ -372,8 +372,57 @@
         </div>
         <div class="ps-tabpane" data-pane="proxy">
           <div class="ps-field">
-            <label class="ps-flabel" for="edit-proxy">Proxy</label>
-            <select class="ps-in" id="edit-proxy"><option value="">None (direct)</option></select>
+            <label class="ps-flabel">Proxy setting</label>
+            <div class="ps-seg" id="edit-proxy-mode">
+              <button type="button" class="ps-seg-btn active" data-val="saved">Saved Proxies</button>
+              <button type="button" class="ps-seg-btn" data-val="custom">Custom</button>
+            </div>
+          </div>
+          <div id="edit-proxy-saved">
+            <div class="ps-field">
+              <label class="ps-flabel" for="edit-proxy">Proxy</label>
+              <select class="ps-in" id="edit-proxy"><option value="">None (direct)</option></select>
+            </div>
+          </div>
+          <div id="edit-proxy-custom" hidden>
+            <div class="ps-field">
+              <label class="ps-flabel" for="edit-px-type">Proxy type</label>
+              <select class="ps-in" id="edit-px-type">
+                <option value="">No Proxy (direct)</option>
+                <option value="http">HTTP</option>
+                <option value="https">HTTPS</option>
+                <option value="socks5">SOCKS5</option>
+                <option value="socks4">SOCKS4</option>
+              </select>
+            </div>
+            <div class="ps-row">
+              <div class="ps-field">
+                <label class="ps-flabel" for="edit-px-host">Host</label>
+                <input class="ps-in" id="edit-px-host" type="text" placeholder="127.0.0.1">
+              </div>
+              <div class="ps-field">
+                <label class="ps-flabel" for="edit-px-port">Port</label>
+                <input class="ps-in" id="edit-px-port" type="number" placeholder="8080">
+              </div>
+            </div>
+            <div class="ps-row">
+              <div class="ps-field">
+                <label class="ps-flabel" for="edit-px-user">Username <span class="ps-flabel-hint">(optional)</span></label>
+                <input class="ps-in" id="edit-px-user" type="text" placeholder="user">
+              </div>
+              <div class="ps-field">
+                <label class="ps-flabel" for="edit-px-pass">Password <span class="ps-flabel-hint">(optional)</span></label>
+                <input class="ps-in" id="edit-px-pass" type="password" placeholder="••••••">
+              </div>
+            </div>
+            <div class="ps-field">
+              <label class="ps-flabel" for="edit-px-name">Save as <span class="ps-flabel-hint">(optional — adds to proxy list)</span></label>
+              <input class="ps-in" id="edit-px-name" type="text" placeholder="e.g. my-proxy-1">
+            </div>
+          </div>
+          <div class="ps-modal-foot" style="justify-content:flex-start">
+            <button type="button" class="ps-btn ghost sm" id="edit-px-test">🔍 Check Proxy</button>
+            <span id="edit-px-result" class="ps-hint"></span>
           </div>
           <p class="ps-hint">Attach a proxy to route this profile's traffic. Timezone and locale stay as configured; use geo-sync on the proxy for full alignment.</p>
         </div>
