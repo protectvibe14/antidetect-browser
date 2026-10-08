@@ -41,10 +41,25 @@ _PROXY_TYPES = {"http", "https", "socks5", "socks4"}
 
 
 def _registry_root() -> str:
-    """Browser registry root patchright installs into / resolves from."""
-    return os.environ.get("PLAYWRIGHT_BROWSERS_PATH") or os.path.join(
-        os.path.expanduser("~"), ".cache", "ms-playwright"
-    )
+    """Browser registry root patchright installs into / resolves from.
+
+    Matches Playwright's own platform-specific cache location:
+    Windows -> %LOCALAPPDATA%\\ms-playwright,
+    macOS -> ~/Library/Caches/ms-playwright,
+    Linux -> ~/.cache/ms-playwright.
+    """
+    env = os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
+    if env:
+        return env
+    home = os.path.expanduser("~")
+    if os.name == "nt":
+        local_app_data = os.environ.get("LOCALAPPDATA")
+        if local_app_data:
+            return os.path.join(local_app_data, "ms-playwright")
+        return os.path.join(home, "AppData", "Local", "ms-playwright")
+    if sys.platform == "darwin":
+        return os.path.join(home, "Library", "Caches", "ms-playwright")
+    return os.path.join(home, ".cache", "ms-playwright")
 
 
 def _chromium_revision():
