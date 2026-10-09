@@ -1001,10 +1001,12 @@ $("btn-sync-stop").addEventListener("click", async () => {
 
 /* ---------------- RPA UI ---------------- */
 $("nav-rpa").addEventListener("click", () => {
-  renderRpaRecipes();
-  renderRpaActivities();
-  populateRpaRun();
-  renderRpaJobs();
+  // Attach workflow builder first (so button always works).
+  try { initWorkflowBuilder(); } catch (e) { console.warn("wf init:", e); }
+  try { renderRpaRecipes(); } catch (e) { console.warn("rpa recipes:", e); }
+  try { renderRpaActivities(); } catch (e) { console.warn("rpa activities:", e); }
+  try { populateRpaRun(); } catch (e) { console.warn("rpa run:", e); }
+  try { renderRpaJobs(); } catch (e) { console.warn("rpa jobs:", e); }
   openModal("modal-rpa");
 });
 
@@ -1019,6 +1021,7 @@ document.querySelectorAll("#rpa-tabs .ps-tab").forEach(t => {
 
 async function renderRpaRecipes() {
   const wrap = $("rpa-recipes-list");
+  if (!wrap) return;
   let recipes = [];
   try { recipes = await api.rpaRecipes(); }
   catch (e) { wrap.innerHTML = `<div class="ps-empty">Failed to load recipes.</div>`; return; }
@@ -1098,20 +1101,27 @@ let wfSteps = [];
 let wfActivities = [];
 
 async function openWorkflowBuilder() {
+  const modal = $("modal-workflow");
+  if (!modal) { toast("Builder not found", "error"); return; }
   wfSteps = [];
-  $("wf-name").value = "";
-  // Load activities for the dropdown.
+  // Open modal first so user always sees something.
+  openModal("modal-workflow");
+  const nameInput = $("wf-name");
+  if (nameInput) nameInput.value = "";
+  const actSel = $("wf-activity-select");
+  if (actSel) actSel.innerHTML = `<option value="">Loading…</option>`;
+  renderWfSteps();
+  // Then load activities.
   try {
     const info = await api.get("/api/rpa/engine");
     wfActivities = info.activities || [];
-    $("wf-activity-select").innerHTML = `<option value="">Choose activity…</option>` +
+    if (!wfActivities.length) throw new Error("No activities");
+    if (actSel) actSel.innerHTML = `<option value="">Choose activity…</option>` +
       wfActivities.map((a, i) => `<option value="${i}">${esc(a.name)}</option>`).join("");
   } catch (e) {
-    toast("Failed to load activities", "error");
-    return;
+    if (actSel) actSel.innerHTML = `<option value="">Failed to load</option>`;
+    toast("Failed to load activities: " + (e.message || e), "error");
   }
-  renderWfSteps();
-  openModal("modal-workflow");
 }
 
 function renderWfSteps() {
@@ -1215,7 +1225,10 @@ function updateWfJson() {
   $("wf-json").value = JSON.stringify(recipe, null, 2);
 }
 
+let _wfInitDone = false;
 function initWorkflowBuilder() {
+  if (_wfInitDone) return;
+  _wfInitDone = true;
   const newBtn = $("rpa-new-workflow");
   if (newBtn) newBtn.addEventListener("click", openWorkflowBuilder);
   
@@ -1285,6 +1298,7 @@ function initWorkflowBuilder() {
 
 async function renderRpaJobs() {
   const wrap = $("rpa-jobs-list");
+  if (!wrap) return;
   let jobs = [];
   try { jobs = await api.rpaJobs(); }
   catch (e) { wrap.innerHTML = `<div class="ps-empty">Failed to load jobs.</div>`; return; }
@@ -2668,5 +2682,4 @@ $("btn-rpa-create").addEventListener("click", async () => {
   if (sf) sf.addEventListener("submit", onSyncStart);
   const rf = $("form-rpa-run");
   if (rf) rf.addEventListener("submit", onRpaRun);
-  initWorkflowBuilder();
 })();
