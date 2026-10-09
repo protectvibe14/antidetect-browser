@@ -356,7 +356,7 @@ function renderTable() {
       <td class="dim">${remark}</td>
       <td><div class="ps-actions" style="justify-content:flex-end">
         ${actionBtn}
-        <button class="ps-btn ghost sm" data-act="edit" title="Edit">⋮</button>
+        <button class="ps-btn ghost sm" data-act="menu" title="More actions">⋮</button>
       </div></td>
     </tr>`;
   }).join("");
@@ -1158,10 +1158,70 @@ async function onAction(name, act) {
     } else if (act === "edit") {
       openEdit(name);
       return; // modal handles its own flow
+    } else if (act === "menu") {
+      showRowMenu(name, event);
+      return;
     }
     await refreshProfiles();
   } catch (e) {
     toast(actionError(act, name, e), "error");
+  }
+}
+
+/* Row dropdown menu (AdsPower-style). */
+let rowMenuName = null;
+function showRowMenu(name, event) {
+  rowMenuName = name;
+  const menu = $("row-menu");
+  menu.hidden = false;
+  // Position near the clicked button.
+  const btn = event.target.closest("button");
+  const rect = btn.getBoundingClientRect();
+  menu.style.top = Math.min(rect.bottom + 4, window.innerHeight - 320) + "px";
+  menu.style.left = Math.max(rect.right - 200, 8) + "px";
+  // Close on outside click.
+  const close = (e) => {
+    if (!menu.contains(e.target)) {
+      menu.hidden = true;
+      document.removeEventListener("click", close);
+    }
+  };
+  setTimeout(() => document.addEventListener("click", close), 10);
+}
+document.querySelectorAll('#row-menu [data-menu]').forEach(btn => {
+  btn.addEventListener("click", async () => {
+    const action = btn.dataset.menu;
+    const name = rowMenuName;
+    $("row-menu").hidden = true;
+    if (!name) return;
+    if (action === "edit") openEdit(name);
+    else if (action === "edit-proxy") openEdit(name, "proxy");
+    else if (action === "edit-account") openEdit(name, "platform");
+    else if (action === "edit-fingerprint") openEdit(name, "fingerprint");
+    else if (action === "cookies") openCookies(name);
+    else if (action === "copy") {
+      if (!confirm(`Copy profile "${name}"?`)) return;
+      try {
+        await api.createProfile({ name: name + "-copy", copy_from: name });
+        toast(`Profile copied as "${name}-copy".`, "success");
+        await refreshProfiles();
+      } catch (e) { toast(`Copy failed: ${e.message || e}`, "error"); }
+    }
+    else if (action === "cache") openCacheInfo(name);
+    else if (action === "delete") onAction(name, "delete");
+  });
+});
+
+async function openCacheInfo(name) {
+  try {
+    const d = await api.get(`/api/profiles/${encodeURIComponent(name)}/cache`);
+    const size = d.size_mb != null ? `${d.size_mb} MB` : "unknown";
+    if (confirm(`Cache for "${name}": ${size}\n\nClear cache data?`)) {
+      await req("DELETE", `/api/profiles/${encodeURIComponent(name)}/cache`);
+      toast("Cache cleared.", "success");
+    }
+  } catch (e) {
+    toast(`Cache info unavailable: ${e.message || e}`, "error");
   }
 }
 
@@ -1442,14 +1502,15 @@ $("form-warmup").addEventListener("submit", async (e) => {
 /* ---------------- Health modal ---------------- */
 
 // ================= Edit Profile =================
-async function openEdit(name) {
+async function openEdit(name, startTab) {
   $("edit-title").textContent = name;
   $("edit-name").value = name;
-  // reset tabs to General
+  // reset tabs (or jump to requested tab for menu shortcuts)
+  const tab = startTab || "general";
   document.querySelectorAll("#edit-tabs .ps-tab").forEach(t =>
-    t.classList.toggle("active", t.dataset.tab === "general"));
+    t.classList.toggle("active", t.dataset.tab === tab));
   document.querySelectorAll("#form-edit .ps-tabpane").forEach(pn =>
-    pn.classList.toggle("active", pn.dataset.pane === "general"));
+    pn.classList.toggle("active", pn.dataset.pane === tab));
   $("edit-overview").innerHTML = `<div class="ps-empty">Loading&hellip;</div>`;
   openModal("modal-edit");
   try {

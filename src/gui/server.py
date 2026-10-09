@@ -286,6 +286,7 @@ class ProfileCreate(BaseModel):
     proxy_name: str | None = None
     client_tag: str | None = None
     engine: str | None = None  # "camoufox" (default) or "chromium"/"patchright"
+    copy_from: str | None = None  # copy fingerprint/settings from this profile
 
 
 class ProfileUpdate(BaseModel):
@@ -599,10 +600,22 @@ def create_app() -> FastAPI:
             engine = normalize_engine_name(body.engine or "camoufox")
         except ValueError as exc:
             raise HTTPException(400, str(exc))
+        # Copy mode: clone fingerprint/settings from source profile.
+        copy_fp = None
+        if body.copy_from:
+            try:
+                src_prof = _profile_manager.get(body.copy_from)
+                copy_fp = dict(src_prof.get("fingerprint", {}))
+            except KeyError:
+                raise HTTPException(404, "source profile '%s' not found" % body.copy_from)
         try:
             persona = _profile_manager.create(
                 name, os=body.os, proxy=proxy,
                 client_tag=body.client_tag, engine=engine)
+            if copy_fp:
+                # Overwrite the new profile's fingerprint with the source's.
+                _profile_manager.update(name, {"fingerprint": copy_fp})
+                persona = _profile_manager.get(name)
         except ValueError as exc:
             # Race-safe: re-check existence to distinguish a duplicate
             # (409) from a bad argument (400).
@@ -1774,6 +1787,46 @@ def create_app() -> FastAPI:
                 pass
         background_tasks.add_task(_do)
         return {"started": True, "engine": engine}
+
+    @app.get("/api/profiles/{name}/cache")
+    def profile_cache_info(name: str):
+        """Cache size info for a profile (AdsPower-style Cache data)."""
+        import os
+        try:
+            prof = _profile_manager.get(name)
+        except KeyError:
+            raise HTTPException(404, "profile not found")
+        # Profile data dir.
+        data_dir = os.path.join(
+            os.environ.get("ANTIDETECT_HOME", os.path.expanduser("~/.antidetect")),
+            "profiles", name)
+        total = 0
+        if os.path.isdir(data_dir):
+            for root, _, files in os.walk(data_dir):
+                for f in files:
+                    try: total += os.path.getsize(os.path.join(root, f))
+                    except OSError: pass
+        return {"size_mb": round(total / 1024 / 1024, 1), "path": data_dir}
+
+    @app.delete("/api/profiles/{name}/cache")
+    def profile_cache_clear(name: str):
+        """Clear cache data for a profile."""
+        import os, shutil
+        try:
+            _profile_manager.get(name)
+        except KeyError:
+            raise HTTPException(404, "profile not found")
+        data_dir = os.path.join(
+            os.environ.get("ANTIDETECT_HOME", os.path.expanduser("~/.antidetect")),
+            "profiles", name)
+        # Only clear cache-like subdirs, never the whole profile.
+        cleared = 0
+        for sub in ("cache", "Cache", "shader-cache", "blob_storage"):
+            p = os.path.join(data_dir, sub)
+            if os.path.isdir(p):
+                shutil.rmtree(p, ignore_errors=True)
+                cleared += 1
+        return {"cleared": cleared}
 
     @app.post("/api/rpa/jobs/{job_id}/stop")
     def rpa_job_stop(job_id: str):
