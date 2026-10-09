@@ -607,13 +607,18 @@ def create_app() -> FastAPI:
             try:
                 src_prof = _profile_manager.get(body.copy_from)
                 # Full clone: fingerprint, proxy, platform, tags, etc.
+                # Use safe conversion — source fields may not be dicts.
+                def _as_dict(v):
+                    return dict(v) if isinstance(v, dict) else {}
+                def _as_list(v):
+                    return list(v) if isinstance(v, (list, tuple)) else []
                 copy_data = {
-                    "fingerprint": dict(src_prof.get("fingerprint", {})),
+                    "fingerprint": _as_dict(src_prof.get("fingerprint")),
                     "proxy": src_prof.get("proxy"),
-                    "platform": dict(src_prof.get("platform", {})),
-                    "tags": list(src_prof.get("tags", [])),
-                    "remark": src_prof.get("remark", ""),
-                    "group": src_prof.get("group", ""),
+                    "platform": _as_dict(src_prof.get("platform")),
+                    "tags": _as_list(src_prof.get("tags")),
+                    "remark": src_prof.get("remark") or "",
+                    "group": src_prof.get("group") or "",
                 }
             except KeyError:
                 raise HTTPException(404, "source profile '%s' not found" % body.copy_from)
