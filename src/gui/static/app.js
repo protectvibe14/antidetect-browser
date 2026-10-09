@@ -899,7 +899,7 @@ async function renderExtensionsList(profileName) {
 }
 
 async function onExtensionUpload(e) {
-  e.preventDefault();
+  if (e) e.preventDefault();
   const profileName = $("edit-name").value;
   const fileInput = $("ext-file");
   if (!fileInput.files.length) { toast("Choose a file first", "error"); return; }
@@ -1524,6 +1524,11 @@ function fillEditForm(prof) {
   setToggle("mediadevice", fp.noise_mediadevice !== false);
   setToggle("clientrects", fp.noise_clientrects !== false);
   setToggle("speech", fp.noise_speech !== false);
+  // Advanced tab.
+  $("edit-ext-mode").value = fp.ext_mode || "team";
+  setPill("edit-sync-mode", fp.sync_mode, "global");
+  setPill("edit-bsettings-mode", fp.bsettings_mode, "global");
+  setToggle("random_fp", fp.random_fingerprint === true);
   $("edit-fp-advanced").hidden = true;
   $("edit-fp-more").textContent = "Show more ∨";
   // platform tab
@@ -1611,6 +1616,10 @@ async function submitEdit(e) {
     noise_mediadevice: editToggleOn("mediadevice"),
     noise_clientrects: editToggleOn("clientrects"),
     noise_speech: editToggleOn("speech"),
+    ext_mode: $("edit-ext-mode").value || null,
+    sync_mode: editPillVal("edit-sync-mode"),
+    bsettings_mode: editPillVal("edit-bsettings-mode"),
+    random_fingerprint: editToggleOn("random_fp"),
     webgl_vendor: $("edit-webgl-vendor").value.trim() || null,
     webgl_renderer: $("edit-webgl-renderer").value.trim() || null,
     hardware_concurrency: num("edit-hw"),
@@ -2248,8 +2257,8 @@ $("btn-rpa-create").addEventListener("click", async () => {
   });
   const bef = $("form-bulk-edit");
   if (bef) bef.addEventListener("submit", submitBulkEdit);
-  const euf = $("form-ext-upload");
-  if (euf) euf.addEventListener("submit", onExtensionUpload);
+  const eub = $("ext-upload-btn");
+  if (eub) eub.addEventListener("click", onExtensionUpload);
   const sf = $("form-sync-start");
   if (sf) sf.addEventListener("submit", onSyncStart);
   const rf = $("form-rpa-run");

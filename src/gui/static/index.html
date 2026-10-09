@@ -126,6 +126,7 @@
           <button class="ps-tab active" data-tab="general">General</button>
           <button class="ps-tab" data-tab="proxy">Proxy</button>
           <button class="ps-tab" data-tab="platform">Platform</button>
+        <button class="ps-tab" data-tab="advanced">Advanced</button>
           <button class="ps-tab" data-tab="fingerprint">Fingerprint</button>
           <button class="ps-tab" data-tab="advanced">Advanced</button>
         </div>
@@ -339,6 +340,7 @@
         <button class="ps-tab" data-tab="fingerprint">Fingerprint</button>
         <button class="ps-tab" data-tab="extensions">Extensions</button>
         <button class="ps-tab" data-tab="platform">Platform</button>
+        <button class="ps-tab" data-tab="advanced">Advanced</button>
       </div>
       <div class="ps-edit-wrap">
       <form id="form-edit" class="ps-form ps-edit-main">
@@ -631,16 +633,16 @@
         </div>
         <div class="ps-tabpane" data-pane="extensions">
           <div id="edit-extensions-list" class="ps-groups-list"></div>
-          <form id="form-ext-upload" class="ps-form" style="margin-top:12px">
+          <div id="form-ext-upload" class="ps-form" style="margin-top:12px">
             <div class="ps-field">
               <label class="ps-flabel" for="ext-file">Upload extension <span class="ps-flabel-hint">(.crx or .zip)</span></label>
               <input class="ps-in" id="ext-file" type="file" accept=".crx,.zip,application/zip">
             </div>
             <p class="ps-hint">Chromium profiles load enabled extensions on launch. Firefox: files are stored for manual install.</p>
             <div class="ps-modal-foot">
-              <button type="submit" class="ps-btn primary sm">Upload</button>
+              <button type="button" class="ps-btn primary sm" id="ext-upload-btn">Upload</button>
             </div>
-          </form>
+          </div>
         </div>
         <div class="ps-tabpane" data-pane="platform">
           <div class="ps-field">
@@ -665,6 +667,38 @@
             <label class="ps-flabel" for="edit-startup-urls">Tabs</label>
             <textarea class="ps-in ps-mono" id="edit-startup-urls" rows="5" placeholder="https://example.com"></textarea>
             <p class="ps-hint">One URL per line — opened as tabs on launch.</p>
+          </div>
+        </div>
+        <div class="ps-tabpane" data-pane="advanced">
+          <div class="ps-field">
+            <label class="ps-flabel" for="edit-ext-mode">Extension</label>
+            <select class="ps-in" id="edit-ext-mode">
+              <option value="team">Use team's extensions</option>
+              <option value="custom">Custom selection</option>
+              <option value="none">No extensions</option>
+            </select>
+            <p class="ps-hint">The enabled extensions from [Extensions] will be installed in the profile.</p>
+          </div>
+          <div class="ps-field">
+            <label class="ps-flabel">Data Sync</label>
+            <div class="ps-pills" id="edit-sync-mode">
+              <button type="button" class="ps-pill active" data-val="global">Use global settings</button>
+              <button type="button" class="ps-pill" data-val="custom">Customize</button>
+            </div>
+            <p class="ps-hint">Sync bookmarks, history and passwords across devices.</p>
+          </div>
+          <div class="ps-field">
+            <label class="ps-flabel">Browser Settings</label>
+            <div class="ps-pills" id="edit-bsettings-mode">
+              <button type="button" class="ps-pill active" data-val="global">Use global settings</button>
+              <button type="button" class="ps-pill" data-val="custom">Customize</button>
+            </div>
+          </div>
+          <div class="ps-field">
+            <label class="ps-flabel">Random fingerprint</label>
+            <div class="ps-noise-row">
+              <label class="ps-noise-item"><button type="button" class="ps-toggle" data-val="random_fp" role="switch" aria-checked="false"><span class="ps-knob"></span></button><span>Enabled: New fingerprint will be randomly generated on each startup, ignoring some existing settings.</span></label>
+            </div>
           </div>
         </div>
         <div class="ps-modal-foot">
@@ -1136,6 +1170,6 @@
 
   <div id="toasts" class="ps-toasts" aria-live="polite"></div>
 
-  <script src="app.js?v=fprefine1" defer></script>
+  <script src="app.js?v=adv1" defer></script>
 </body>
 </html>

@@ -312,6 +312,11 @@ class ProfileUpdate(BaseModel):
     custom_proxy: dict | None = None  # {type, host, port, username, password, save_name}
     remark: str | None = None
     cookie_json: str | None = None
+    # Advanced tab
+    ext_mode: str | None = None
+    sync_mode: str | None = None
+    bsettings_mode: str | None = None
+    random_fingerprint: bool | None = None
     # Fingerprint modes (AdsPower-style)
     timezone_mode: str | None = None
     language_mode: str | None = None
@@ -659,6 +664,10 @@ def create_app() -> FastAPI:
             "noise_mediadevice": persona.get("noise_mediadevice"),
             "noise_clientrects": persona.get("noise_clientrects"),
             "noise_speech": persona.get("noise_speech"),
+            "ext_mode": persona.get("ext_mode"),
+            "sync_mode": persona.get("sync_mode"),
+            "bsettings_mode": persona.get("bsettings_mode"),
+            "random_fingerprint": persona.get("random_fingerprint"),
         }
         # Platform tab fields (top-level columns).
         view["platform_acct"] = persona.get("platform_acct")
@@ -752,7 +761,9 @@ def create_app() -> FastAPI:
                     "display_lang_mode",
                     "screen_mode", "fonts_mode", "webgl_mode", "webgpu_mode",
                     "noise_canvas", "noise_webgl", "noise_audio",
-                    "noise_mediadevice", "noise_clientrects", "noise_speech"):
+                    "noise_mediadevice", "noise_clientrects", "noise_speech",
+                    "ext_mode", "sync_mode", "bsettings_mode",
+                    "random_fingerprint"):
             val = getattr(body, key)
             if val is not None:
                 fields[key] = val
