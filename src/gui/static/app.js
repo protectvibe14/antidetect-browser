@@ -1541,23 +1541,42 @@ function fillEditForm(prof) {
   $("edit-sh").value = fp.screen_height ?? "";
   $("edit-webgl-vendor").value = fp.webgl_vendor || "";
   $("edit-webgl-renderer").value = fp.webgl_renderer || "";
-  // overview (read-only fingerprint panel, AdsPower-style)
+  // overview (AdsPower-style detailed fingerprint panel)
+  const modeLabel = (mode, labels) => labels[mode] || mode || "—";
+  const noiseLabel = (on, seed) => on ? `Noise${seed ? ` [${seed}]` : ""}` : "Real";
+  // Generate stable noise seeds from profile name (like AdsPower's [99EE5022]).
+  const seedFor = (key) => {
+    let h = 0;
+    const s = (prof.name || "") + key;
+    for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+    return (h >>> 0).toString(16).toUpperCase().padStart(8, "0").slice(0, 8);
+  };
+  const browserLabel = prof.engine === "patchright"
+    ? "Chromium [Chrome 153]" : "Firefox [Firefox 156]";
   const rows = [
-    ["Name", prof.name], ["Status", prof.status], ["Engine", prof.engine],
-    ["OS", fp.os], ["Platform", fp.platform],
-    ["User-Agent", fp.user_agent], ["Timezone", fp.timezone],
-    ["Locale", fp.locale],
-    ["Screen", fp.screen_width && fp.screen_height ? fp.screen_width + "x" + fp.screen_height : ""],
-    ["Viewport", fp.viewport_width && fp.viewport_height ? fp.viewport_width + "x" + fp.viewport_height : ""],
-    ["WebGL vendor", fp.webgl_vendor], ["WebGL renderer", fp.webgl_renderer],
-    ["CPU cores", fp.hardware_concurrency], ["Device memory", fp.device_memory ? fp.device_memory + " GB" : ""],
-    ["Color depth", fp.color_depth], ["Touch points", fp.touch_points],
-    ["Proxy", fp.proxy ? (fp.proxy.name || (fp.proxy.host + ":" + fp.proxy.port)) : "Direct"],
-    ["Client tag", prof.client_tag || ""],
-    ["Last used", prof.last_used || "never"],
+    ["Browser", browserLabel],
+    ["User-Agent", fp.user_agent || "—"],
+    ["WebRTC", modeLabel(fp.webrtc_mode, {forward: "Forward", replace: "Replace", real: "Real", disabled: "Disabled", proxy: "Proxy UDP"})],
+    ["Timezone", modeLabel(fp.timezone_mode, {ip: "Based on IP", real: "Real", custom: fp.timezone || "Custom"})],
+    ["Location", `[${fp.location_perm === "allow" ? "Always" : "Ask"}] ` + modeLabel(fp.location_mode, {ip: "Based on IP", custom: "Custom", block: "Block"})],
+    ["Language", modeLabel(fp.language_mode, {ip: "Based on IP", custom: fp.locale || "Custom"})],
+    ["Display language", modeLabel(fp.display_lang_mode, {based: "Based on Language", real: "Real", custom: "Custom"})],
+    ["Screen Resolution", modeLabel(fp.screen_mode, {predefined: "Based on User-Agent", custom: (fp.screen_width && fp.screen_height ? `${fp.screen_width}×${fp.screen_height}` : "Custom")})],
+    ["Fonts", modeLabel(fp.fonts_mode, {default: "Default", custom: "Custom"})],
+    ["Canvas", noiseLabel(fp.noise_canvas, null)],
+    ["WebGL Image", noiseLabel(fp.noise_webgl, null)],
+    ["AudioContext", noiseLabel(fp.noise_audio, fp.noise_audio ? seedFor("audio") : null)],
+    ["Media device", fp.noise_mediadevice !== false ? "Noise [Auto]" : "Real"],
+    ["ClientRects", noiseLabel(fp.noise_clientrects, fp.noise_clientrects ? seedFor("rects") : null)],
+    ["SpeechVoices", noiseLabel(fp.noise_speech, null)],
+    ["WebGL metadata", `${fp.webgl_vendor || ""} ${fp.webgl_renderer || ""}`.trim() || "—"],
+    ["WebGPU", modeLabel(fp.webgpu_mode, {based: "Based on WebGL", real: "Real", disabled: "Disabled"})],
+    ["CPU", fp.hardware_concurrency ? `${fp.hardware_concurrency} cores` : "—"],
+    ["RAM", fp.device_memory ? `${fp.device_memory} GB` : "—"],
+    ["Proxy", fp.proxy ? (fp.proxy.name || `${fp.proxy.host}:${fp.proxy.port}`) : "Direct"],
   ];
   $("edit-overview").innerHTML = rows.map(([k, v]) =>
-    `<div class="ps-ov-row"><span class="k">${esc(k)}</span><span class="v" title="${esc(v == null || v === "" ? "—" : String(v))}">${esc(v == null || v === "" ? "—" : String(v))}</span></div>`).join("");
+    `<div class="ps-ov-row"><span class="k">${esc(k)}</span><span class="v" title="${esc(String(v))}">${esc(String(v))}</span></div>`).join("");
 }
 
 async function submitEdit(e) {
@@ -1656,6 +1675,8 @@ async function regenFingerprint() {
 // tab switching handled by document delegation listener above
 $("form-edit").addEventListener("submit", submitEdit);
 $("edit-regen").addEventListener("click", regenFingerprint);
+const brfp = $("btn-regen-fp");
+if (brfp) brfp.addEventListener("click", regenFingerprint);
 // Edit modal UA shuffle (AdsPower-style).
 $("edit-ua-shuffle").addEventListener("click", async () => {
   const os = editOsVal();
