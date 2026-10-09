@@ -639,7 +639,26 @@ def create_app() -> FastAPI:
             "touch_points": persona.get("touch_points"),
             "geolocation": persona.get("geolocation"),
             "proxy": persona.get("proxy"),
+            # Fingerprint modes (AdsPower-style)
+            "webrtc_mode": persona.get("webrtc_mode"),
+            "timezone_mode": persona.get("timezone_mode"),
+            "location_mode": persona.get("location_mode"),
+            "language_mode": persona.get("language_mode"),
+            "display_lang_mode": persona.get("display_lang_mode"),
+            "screen_mode": persona.get("screen_mode"),
+            "fonts_mode": persona.get("fonts_mode"),
+            "webgl_mode": persona.get("webgl_mode"),
+            "webgpu_mode": persona.get("webgpu_mode"),
+            "noise_canvas": persona.get("noise_canvas"),
+            "noise_webgl": persona.get("noise_webgl"),
+            "noise_audio": persona.get("noise_audio"),
+            "noise_mediadevice": persona.get("noise_mediadevice"),
+            "noise_clientrects": persona.get("noise_clientrects"),
+            "noise_speech": persona.get("noise_speech"),
         }
+        # Platform tab fields (top-level columns).
+        view["platform_acct"] = persona.get("platform_acct")
+        view["startup_urls"] = persona.get("startup_urls", [])
         return {"profile": view}
 
     @app.put("/api/profiles/{name}")
