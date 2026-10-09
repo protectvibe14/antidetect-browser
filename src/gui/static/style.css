@@ -412,3 +412,9 @@ select.ps-in { cursor: pointer; }
 .ps-counter { position: absolute; right: 10px; bottom: 8px; font-size: 11px; color: var(--dim); pointer-events: none; }
 .ps-in-wrap .ps-in { padding-right: 70px; }
 .ps-in-wrap textarea.ps-in { padding-bottom: 22px; }
+
+/* Proxy tab: Host:Port combined (AdsPower-style) */
+.ps-hostport { display: flex; align-items: center; gap: 8px; }
+.ps-hostport .ps-in { flex: 1; }
+.ps-hostport #edit-px-port { max-width: 110px; }
+.ps-hostport-sep { font-weight: 700; color: var(--muted); }

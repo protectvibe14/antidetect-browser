@@ -562,9 +562,11 @@ document.addEventListener("click", (e) => {
   if (seg) {
     document.querySelectorAll("#edit-proxy-mode .ps-seg-btn").forEach(b =>
       b.classList.toggle("active", b === seg));
-    const custom = seg.dataset.val === "custom";
-    $("edit-proxy-saved").hidden = custom;
-    $("edit-proxy-custom").hidden = !custom;
+    const mode = seg.dataset.val;
+    $("edit-proxy-saved").hidden = mode !== "saved";
+    $("edit-proxy-custom").hidden = mode !== "custom";
+    $("edit-proxy-rotating").hidden = mode !== "rotating";
+    $("edit-proxy-provider").hidden = mode !== "provider";
     e.preventDefault();
     return;
   }
@@ -612,6 +614,30 @@ $("edit-cookie-merge").addEventListener("click", () => {
     if (!Array.isArray(arr)) throw new Error("not an array");
     toast(`Merged ${arr.length} cookies`, "success");
   } catch { toast("Invalid cookie JSON", "error"); }
+});
+// Paste proxy from clipboard (host:port:user:pass format).
+$("edit-px-paste").addEventListener("click", async () => {
+  try {
+    const text = (await navigator.clipboard.readText()).trim();
+    // Try host:port:user:pass or host:port.
+    const parts = text.split(":");
+    if (parts.length >= 2) {
+      $("edit-px-host").value = parts[0];
+      $("edit-px-port").value = parts[1];
+      if (parts[2]) $("edit-px-user").value = parts[2];
+      if (parts[3]) $("edit-px-pass").value = parts[3];
+      toast("Proxy pasted", "success");
+    } else { toast("Clipboard doesn't look like host:port", "info"); }
+  } catch { toast("Clipboard read failed", "error"); }
+});
+// Refresh Change IP URL (open it to rotate IP).
+$("edit-px-refresh-url").addEventListener("click", async () => {
+  const url = $("edit-px-changeurl").value.trim();
+  if (!url) { toast("Enter Change IP URL first", "info"); return; }
+  try {
+    await fetch(url, { mode: "no-cors" });
+    toast("Change IP requested", "success");
+  } catch { toast("Request sent", "info"); }
 });
 
 function editPillVal(id) {
@@ -1398,11 +1424,13 @@ function fillEditForm(prof) {
     }
     sel.value = cur;
   });
-  // reset custom proxy tab to saved mode
+  // reset proxy tabs to Custom mode (AdsPower default)
   document.querySelectorAll("#edit-proxy-mode .ps-seg-btn").forEach(b =>
-    b.classList.toggle("active", b.dataset.val === "saved"));
-  $("edit-proxy-saved").hidden = false;
-  $("edit-proxy-custom").hidden = true;
+    b.classList.toggle("active", b.dataset.val === "custom"));
+  $("edit-proxy-saved").hidden = true;
+  $("edit-proxy-custom").hidden = false;
+  $("edit-proxy-rotating").hidden = true;
+  $("edit-proxy-provider").hidden = true;
   $("edit-px-type").value = "";
   $("edit-px-host").value = "";
   $("edit-px-port").value = "";
@@ -1480,7 +1508,7 @@ async function submitEdit(e) {
   e.preventDefault();
   const name = $("edit-name").value;
   const num = id => { const v = $(id).value.trim(); return v === "" ? null : parseInt(v, 10); };
-  // Proxy: saved or custom (AdsPower-style).
+  // Proxy: saved, custom, rotating, provider (AdsPower-style).
   const customProxy = !$("edit-proxy-custom").hidden;
   let proxy_name = $("edit-proxy").value;
   let custom_proxy = null;
@@ -1495,6 +1523,8 @@ async function submitEdit(e) {
         username: $("edit-px-user").value.trim() || null,
         password: $("edit-px-pass").value || null,
         save_name: saveName || null,
+        ip_checker: $("edit-px-ipchecker").value || null,
+        change_ip_url: $("edit-px-changeurl").value.trim() || null,
       };
       proxy_name = null; // custom takes precedence
     } else if (!ptype) {

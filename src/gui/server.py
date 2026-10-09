@@ -719,7 +719,9 @@ def create_app() -> FastAPI:
                     raise HTTPException(400, "bad proxy type '%s'" % ptype)
                 proxy = {"type": ptype, "host": host, "port": port,
                          "username": cp.get("username") or None,
-                         "password": cp.get("password") or None}
+                         "password": cp.get("password") or None,
+                         "ip_checker": cp.get("ip_checker") or None,
+                         "change_ip_url": cp.get("change_ip_url") or None}
                 save_name = (cp.get("save_name") or "").strip()
                 if save_name:
                     try:
