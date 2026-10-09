@@ -1856,3 +1856,32 @@ input[type="checkbox"]:disabled { opacity: .45; cursor: not-allowed; transform: 
   }
   html { scroll-behavior: auto; }
 }
+
+/* AdsPower-style row hover: full-row highlight + action reveal */
+.ps-table tbody tr {
+  position: relative;
+  transition: background 0.18s ease, box-shadow 0.18s ease;
+  cursor: default;
+}
+.ps-table tbody tr:hover {
+  background: var(--select-hl);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+html[data-theme="light"] .ps-table tbody tr:hover {
+  background: #eef4ff;
+}
+/* Action buttons fade in on row hover (AdsPower does this) */
+.ps-table tbody tr .ps-actions {
+  opacity: 0.45;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  transform: translateX(4px);
+}
+.ps-table tbody tr:hover .ps-actions,
+.ps-table tbody tr:focus-within .ps-actions {
+  opacity: 1;
+  transform: translateX(0);
+}
+/* Checkbox column highlight on hover */
+.ps-table tbody tr:hover td:first-child {
+  background: var(--accent-glow);
+}

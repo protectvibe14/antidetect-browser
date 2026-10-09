@@ -363,7 +363,7 @@ function renderTable() {
   body.querySelectorAll("tr[data-name]").forEach(tr => {
     const name = tr.dataset.name;
     tr.querySelectorAll("[data-act]").forEach(btn => {
-      btn.addEventListener("click", () => onAction(name, btn.dataset.act));
+      btn.addEventListener("click", (e) => onAction(name, btn.dataset.act, e));
     });
     const cb = tr.querySelector(".row-select");
     if (cb) cb.addEventListener("change", () => {
@@ -1134,7 +1134,7 @@ function renderAll() {
 }
 
 /* ---------------- Actions ---------------- */
-async function onAction(name, act) {
+async function onAction(name, act, evt) {
   try {
     if (act === "launch") {
       await api.launch(name);
@@ -1159,7 +1159,7 @@ async function onAction(name, act) {
       openEdit(name);
       return; // modal handles its own flow
     } else if (act === "menu") {
-      showRowMenu(name, event);
+      showRowMenu(name, evt);
       return;
     }
     await refreshProfiles();
@@ -1170,24 +1170,46 @@ async function onAction(name, act) {
 
 /* Row dropdown menu (AdsPower-style). */
 let rowMenuName = null;
-function showRowMenu(name, event) {
+function showRowMenu(name, evt) {
   rowMenuName = name;
   const menu = $("row-menu");
+  // Close any existing menu first.
+  menu.hidden = true;
+  document.removeEventListener("click", _rowMenuClose);
   menu.hidden = false;
-  // Position near the clicked button.
-  const btn = event.target.closest("button");
-  const rect = btn.getBoundingClientRect();
-  menu.style.top = Math.min(rect.bottom + 4, window.innerHeight - 320) + "px";
-  menu.style.left = Math.max(rect.right - 200, 8) + "px";
-  // Close on outside click.
-  const close = (e) => {
+  // Position near the clicked button (fallback to cursor/right side).
+  let top = window.innerHeight / 2 - 100, left = window.innerWidth - 220;
+  try {
+    const t = (evt && evt.target && evt.target.closest) ? evt.target.closest("button") : null;
+    if (t) {
+      const rect = t.getBoundingClientRect();
+      top = Math.min(rect.bottom + 4, window.innerHeight - 320);
+      left = Math.max(rect.right - 200, 8);
+    }
+  } catch {}
+  menu.style.top = top + "px";
+  menu.style.left = left + "px";
+  // Close on outside click or Escape.
+  _rowMenuClose = (e) => {
     if (!menu.contains(e.target)) {
       menu.hidden = true;
-      document.removeEventListener("click", close);
+      document.removeEventListener("click", _rowMenuClose);
+      document.removeEventListener("keydown", _rowMenuEsc);
     }
   };
-  setTimeout(() => document.addEventListener("click", close), 10);
+  _rowMenuEsc = (e) => {
+    if (e.key === "Escape") {
+      menu.hidden = true;
+      document.removeEventListener("click", _rowMenuClose);
+      document.removeEventListener("keydown", _rowMenuEsc);
+    }
+  };
+  setTimeout(() => {
+    document.addEventListener("click", _rowMenuClose);
+    document.addEventListener("keydown", _rowMenuEsc);
+  }, 10);
 }
+let _rowMenuClose = null, _rowMenuEsc = null;
 document.querySelectorAll('#row-menu [data-menu]').forEach(btn => {
   btn.addEventListener("click", async () => {
     const action = btn.dataset.menu;
