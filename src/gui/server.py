@@ -602,20 +602,43 @@ def create_app() -> FastAPI:
             raise HTTPException(400, str(exc))
         # Copy mode: clone fingerprint/settings from source profile.
         copy_fp = None
+        copy_data = {}
         if body.copy_from:
             try:
                 src_prof = _profile_manager.get(body.copy_from)
-                copy_fp = dict(src_prof.get("fingerprint", {}))
+                # Full clone: fingerprint, proxy, platform, tags, etc.
+                copy_data = {
+                    "fingerprint": dict(src_prof.get("fingerprint", {})),
+                    "proxy": src_prof.get("proxy"),
+                    "platform": dict(src_prof.get("platform", {})),
+                    "tags": list(src_prof.get("tags", [])),
+                    "remark": src_prof.get("remark", ""),
+                    "group": src_prof.get("group", ""),
+                }
             except KeyError:
                 raise HTTPException(404, "source profile '%s' not found" % body.copy_from)
         try:
+            # Use source proxy if not explicitly provided.
+            if not proxy and copy_data.get("proxy"):
+                proxy = copy_data["proxy"]
             persona = _profile_manager.create(
                 name, os=body.os, proxy=proxy,
                 client_tag=body.client_tag, engine=engine)
-            if copy_fp:
-                # Overwrite the new profile's fingerprint with the source's.
-                _profile_manager.update(name, {"fingerprint": copy_fp})
-                persona = _profile_manager.get(name)
+            if copy_data:
+                updates = {}
+                if copy_data.get("fingerprint"):
+                    updates["fingerprint"] = copy_data["fingerprint"]
+                if copy_data.get("platform"):
+                    updates["platform"] = copy_data["platform"]
+                if copy_data.get("tags"):
+                    updates["tags"] = copy_data["tags"]
+                if copy_data.get("remark"):
+                    updates["remark"] = copy_data["remark"]
+                if copy_data.get("group"):
+                    updates["group"] = copy_data["group"]
+                if updates:
+                    _profile_manager.update(name, updates)
+                    persona = _profile_manager.get(name)
         except ValueError as exc:
             # Race-safe: re-check existence to distinguish a duplicate
             # (409) from a bad argument (400).

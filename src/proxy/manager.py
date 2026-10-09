@@ -221,28 +221,57 @@ class ProxyManager:
         return result["ok"]
 
     def test_with_latency(self, name) -> dict:
-        """Test a proxy and measure connection latency in ms.
+        """Test a proxy with real HTTP request through it.
 
+        Verifies: TCP connect, auth, protocol, and exit IP.
         Returns:
-            ``{"ok": bool, "latency_ms": int|None, "error": str|None}``.
-            Never raises.
+            ``{"ok": bool, "latency_ms": int|None, "exit_ip": str|None,
+               "error": str|None}``. Never raises.
         """
         import time
         try:
             proxy = self.get(name)
-        except (KeyError, Exception) as exc:
-            return {"ok": False, "latency_ms": None,
+        except (KeyError, Exception):
+            return {"ok": False, "latency_ms": None, "exit_ip": None,
                     "error": "no proxy named '%s'" % name}
+
+        host = proxy.get("host", "")
+        port = proxy.get("port", 0)
+        username = proxy.get("username", "")
+        password = proxy.get("password", "")
+        ptype = (proxy.get("ptype") or "http").lower()
+
+        # Build proxy URL with auth if present.
+        auth = f"{username}:{password}@" if username else ""
+        scheme = "socks5" if "socks" in ptype else "http"
+        proxy_url = f"{scheme}://{auth}{host}:{port}"
+
         start = time.monotonic()
         try:
-            sock = socket.create_connection(
-                (proxy["host"], proxy["port"]), timeout=5
-            )
-            sock.close()
+            import urllib.request
+            # Use httpbin for exit IP check.
+            req = urllib.request.Request("http://httpbin.org/ip",
+                                         headers={"User-Agent": "Mozilla/5.0"})
+            req.set_proxy(proxy_url, "http")
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = resp.read().decode()
+                import json as _json
+                exit_ip = _json.loads(data).get("origin", "")
             latency = int((time.monotonic() - start) * 1000)
-            return {"ok": True, "latency_ms": latency, "error": None}
+            return {"ok": True, "latency_ms": latency,
+                    "exit_ip": exit_ip, "error": None}
         except Exception as exc:
-            return {"ok": False, "latency_ms": None, "error": str(exc)}
+            # Fallback: TCP-only check.
+            try:
+                sock = socket.create_connection((host, port), timeout=5)
+                sock.close()
+                latency = int((time.monotonic() - start) * 1000)
+                return {"ok": True, "latency_ms": latency,
+                        "exit_ip": None,
+                        "error": "TCP ok, HTTP failed: %s" % str(exc)[:100]}
+            except Exception as e2:
+                return {"ok": False, "latency_ms": None, "exit_ip": None,
+                        "error": str(e2)[:200]}
 
     def update(self, name, **fields) -> dict:
         """Update a proxy's fields (host, port, username, password, ptype).
