@@ -629,8 +629,12 @@
         </div>
         <div class="ps-tabpane" data-pane="platform">
           <div class="ps-field">
-            <label class="ps-flabel" for="edit-platform-acct">Platform account</label>
-            <select class="ps-in" id="edit-platform-acct">
+            <label class="ps-flabel">Platform</label>
+            <button type="button" class="ps-add-platform" id="edit-add-platform">
+              <span class="ps-add-icon">⊕</span> Add Platform Account
+            </button>
+            <div id="edit-platform-list" class="ps-platform-list"></div>
+            <select class="ps-in" id="edit-platform-acct" hidden>
               <option value="">None</option>
               <option value="facebook">Facebook</option>
               <option value="google">Google</option>
@@ -638,12 +642,14 @@
               <option value="instagram">Instagram</option>
               <option value="twitter">Twitter/X</option>
               <option value="amazon">Amazon</option>
+              <option value="youtube">YouTube</option>
               <option value="other">Other</option>
             </select>
           </div>
           <div class="ps-field">
-            <label class="ps-flabel" for="edit-startup-urls">Startup URLs <span class="ps-flabel-hint">(one per line, opened on launch)</span></label>
-            <textarea class="ps-in" id="edit-startup-urls" rows="4" placeholder="https://example.com&#10;https://example.com/login"></textarea>
+            <label class="ps-flabel" for="edit-startup-urls">Tabs</label>
+            <textarea class="ps-in ps-mono" id="edit-startup-urls" rows="5" placeholder="https://example.com"></textarea>
+            <p class="ps-hint">One URL per line — opened as tabs on launch.</p>
           </div>
         </div>
         <div class="ps-modal-foot">
@@ -1115,6 +1121,6 @@
 
   <div id="toasts" class="ps-toasts" aria-live="polite"></div>
 
-  <script src="app.js?v=proxy1" defer></script>
+  <script src="app.js?v=platform1" defer></script>
 </body>
 </html>

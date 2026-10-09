@@ -418,3 +418,12 @@ select.ps-in { cursor: pointer; }
 .ps-hostport .ps-in { flex: 1; }
 .ps-hostport #edit-px-port { max-width: 110px; }
 .ps-hostport-sep { font-weight: 700; color: var(--muted); }
+
+/* Platform tab: Add Platform Account (AdsPower-style) */
+.ps-add-platform { width: 100%; padding: 12px; border: 1.5px dashed var(--accent); border-radius: 10px; background: none; color: var(--accent); font-size: 13px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; }
+.ps-add-platform:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.ps-add-icon { font-size: 16px; }
+.ps-platform-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.ps-platform-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; background: var(--card); border: 1px solid var(--line); border-radius: 20px; font-size: 12px; }
+.ps-platform-chip button { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 14px; }
+.ps-platform-chip button:hover { color: #ff453a; }

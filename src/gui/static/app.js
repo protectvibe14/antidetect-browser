@@ -639,6 +639,37 @@ $("edit-px-refresh-url").addEventListener("click", async () => {
     toast("Change IP requested", "success");
   } catch { toast("Request sent", "info"); }
 });
+// Add Platform Account (AdsPower-style).
+const PLATFORM_NAMES = {
+  facebook: "Facebook", google: "Google", youtube: "YouTube",
+  tiktok: "TikTok", instagram: "Instagram", twitter: "Twitter/X",
+  amazon: "Amazon", other: "Other",
+};
+function renderPlatformList() {
+  const val = $("edit-platform-acct").value;
+  const list = $("edit-platform-list");
+  list.innerHTML = "";
+  if (val && PLATFORM_NAMES[val]) {
+    const chip = document.createElement("span");
+    chip.className = "ps-platform-chip";
+    chip.innerHTML = `${esc(PLATFORM_NAMES[val])} <button type="button" title="Remove">×</button>`;
+    chip.querySelector("button").addEventListener("click", () => {
+      $("edit-platform-acct").value = "";
+      renderPlatformList();
+    });
+    list.appendChild(chip);
+  }
+}
+$("edit-add-platform").addEventListener("click", () => {
+  // Cycle through platforms or prompt.
+  const sel = $("edit-platform-acct");
+  const current = sel.value;
+  const opts = [...sel.options].map(o => o.value).filter(v => v);
+  const idx = opts.indexOf(current);
+  sel.value = opts[(idx + 1) % opts.length] || opts[0];
+  renderPlatformList();
+  toast(`Platform: ${PLATFORM_NAMES[sel.value] || "None"}`, "info");
+});
 
 function editPillVal(id) {
   const el = document.querySelector(`#${id} .ps-pill.active`);
@@ -1478,6 +1509,7 @@ function fillEditForm(prof) {
   $("edit-fp-more").textContent = "Show more ∨";
   // platform tab
   $("edit-platform-acct").value = prof.platform_acct || "";
+  renderPlatformList();
   $("edit-startup-urls").value = (prof.startup_urls || []).join("\n");
   $("edit-hw").value = fp.hardware_concurrency ?? "";
   $("edit-mem").value = fp.device_memory ?? "";
