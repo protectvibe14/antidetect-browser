@@ -1675,6 +1675,17 @@ def create_app() -> FastAPI:
         """List RPA recipes (metadata)."""
         return {"recipes": _rpa_manager().list()}
 
+    @app.get("/api/rpa/engine")
+    def rpa_engine_info():
+        """RPA engine info (RPAForge integration)."""
+        try:
+            from ..rpa.rpaforge import get_engine_info, list_webui_activities
+            info = get_engine_info()
+            info["activities"] = list_webui_activities()
+            return info
+        except Exception as e:
+            return {"name": "RPAForge", "available": False, "error": str(e)[:200]}
+
     @app.post("/api/rpa/recipes", status_code=201)
     def rpa_create_recipe(body: dict):
         """Create an RPA recipe from a full recipe dict; returns its id."""

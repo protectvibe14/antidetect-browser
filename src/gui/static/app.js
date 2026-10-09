@@ -1002,6 +1002,7 @@ $("btn-sync-stop").addEventListener("click", async () => {
 /* ---------------- RPA UI ---------------- */
 $("nav-rpa").addEventListener("click", () => {
   renderRpaRecipes();
+  renderRpaActivities();
   populateRpaRun();
   renderRpaJobs();
   openModal("modal-rpa");
@@ -1023,7 +1024,7 @@ async function renderRpaRecipes() {
   catch (e) { wrap.innerHTML = `<div class="ps-empty">Failed to load recipes.</div>`; return; }
   const list = Array.isArray(recipes) ? recipes : Object.values(recipes);
   if (list.length === 0) {
-    wrap.innerHTML = `<div class="ps-empty">No recipes yet. Add recipes via the CLI.</div>`;
+    wrap.innerHTML = `<div class="ps-empty">No workflows yet. Add via CLI or API.</div>`;
     return;
   }
   wrap.innerHTML = list.map(r => {
@@ -1042,6 +1043,29 @@ async function renderRpaRecipes() {
       document.querySelector('#rpa-tabs [data-tab="run"]').click();
     });
   });
+}
+
+async function renderRpaActivities() {
+  const wrap = $("rpa-activities-list");
+  if (!wrap) return;
+  wrap.innerHTML = `<div class="ps-empty">Loading activities…</div>`;
+  try {
+    const info = await api.get("/api/rpa/engine");
+    const acts = info.activities || [];
+    if (!acts.length) {
+      wrap.innerHTML = `<div class="ps-empty">Engine unavailable.</div>`;
+      return;
+    }
+    wrap.innerHTML = acts.map(a => `
+      <div class="ps-field" style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:6px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <strong>⚙️ ${esc(a.name)}</strong>
+        </div>
+        <p class="ps-hint" style="margin:4px 0 0">${esc(a.desc || "")}</p>
+      </div>`).join("");
+  } catch (e) {
+    wrap.innerHTML = `<div class="ps-empty">Failed: ${esc(e.message || e)}</div>`;
+  }
 }
 
 function populateRpaRun() {
