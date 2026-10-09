@@ -1034,9 +1034,23 @@ async function renderRpaRecipes() {
       <span class="ps-mono">${esc(name)}</span>
       <span class="dim">${esc(r.description || "")}</span>
       <span style="flex:1"></span>
+      <button class="ps-btn ghost sm" data-rpa-export="${esc(id)}" title="Export JSON">⬇</button>
       <button class="ps-btn ghost sm" data-rpa-run="${esc(id)}">Run</button>
     </div>`;
   }).join("");
+  wrap.querySelectorAll("[data-rpa-export]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      try {
+        const r = await api.get(`/api/rpa/recipes/${encodeURIComponent(btn.dataset.rpaExport)}`);
+        const blob = new Blob([JSON.stringify(r.recipe || r, null, 2)], { type: "application/json" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = (btn.dataset.rpaExport) + ".json";
+        a.click();
+        toast("Workflow exported.", "success");
+      } catch (e) { toast(`Export failed: ${e.message || e}`, "error"); }
+    });
+  });
   wrap.querySelectorAll("[data-rpa-run]").forEach(btn => {
     btn.addEventListener("click", () => {
       $("rpa-recipe").value = btn.dataset.rpaRun;
@@ -1077,6 +1091,196 @@ function populateRpaRun() {
   }).catch(() => { $("rpa-recipe").innerHTML = `<option value="">No recipes</option>`; });
   $("rpa-profile").innerHTML = state.profiles.map(p =>
     `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join("");
+}
+
+/* ---------------- Workflow Builder (AdsPower-style) ---------------- */
+let wfSteps = [];
+let wfActivities = [];
+
+async function openWorkflowBuilder() {
+  wfSteps = [];
+  $("wf-name").value = "";
+  // Load activities for the dropdown.
+  try {
+    const info = await api.get("/api/rpa/engine");
+    wfActivities = info.activities || [];
+    $("wf-activity-select").innerHTML = `<option value="">Choose activity…</option>` +
+      wfActivities.map((a, i) => `<option value="${i}">${esc(a.name)}</option>`).join("");
+  } catch (e) {
+    toast("Failed to load activities", "error");
+    return;
+  }
+  renderWfSteps();
+  openModal("modal-workflow");
+}
+
+function renderWfSteps() {
+  const wrap = $("wf-steps");
+  if (wfSteps.length === 0) {
+    wrap.innerHTML = `<div class="ps-empty">No steps yet. Add activities above.</div>`;
+  } else {
+    wrap.innerHTML = wfSteps.map((s, i) => `
+      <div class="ps-field" style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:6px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <strong>${i + 1}. ⚙️ ${esc(s.name)}</strong>
+          <button type="button" class="ps-btn ghost sm" data-wf-del="${i}">✕</button>
+        </div>
+        <div class="ps-wf-params" style="margin-top:8px">
+          ${wfParamInputs(s, i)}
+        </div>
+      </div>`).join("");
+    wrap.querySelectorAll("[data-wf-del]").forEach(b =>
+      b.addEventListener("click", () => {
+        wfSteps.splice(parseInt(b.dataset.wfDel), 1);
+        renderWfSteps();
+      }));
+    // Wire param inputs.
+    wrap.querySelectorAll("[data-wf-param]").forEach(inp => {
+      inp.addEventListener("input", () => {
+        const [idx, key] = inp.dataset.wfParam.split(":");
+        wfSteps[parseInt(idx)].params[key] = inp.value;
+        updateWfJson();
+      });
+    });
+  }
+  updateWfJson();
+}
+
+function wfParamInputs(step, idx) {
+  // Common params per activity.
+  const fields = {
+    "Navigate To": ["url"],
+    "Click": ["selector"],
+    "Input Text": ["selector", "text"],
+    "Get Text": ["selector"],
+    "Wait For Element": ["selector", "timeout"],
+    "Screenshot": ["path"],
+    "Execute JavaScript": ["script"],
+    "Select Option": ["selector", "value"],
+    "Check Checkbox": ["selector"],
+    "Upload File": ["selector", "file"],
+    "Get Attribute": ["selector", "attribute"],
+    "Scroll To": ["selector"],
+    "Hover": ["selector"],
+    "Press Key": ["key"],
+  };
+  const keys = fields[step.name] || ["selector"];
+  return keys.map(k => `
+    <div style="margin-bottom:6px">
+      <label class="ps-flabel" style="font-size:11px">${esc(k)}</label>
+      <input class="ps-in" data-wf-param="${idx}:${k}" value="${esc(step.params[k] || "")}"
+        placeholder="${esc(k)}" style="font-size:13px">
+    </div>`).join("");
+}
+
+function updateWfJson() {
+  // Build steps in bridge format: {type, selector, ...}
+  // Map activity names to step types.
+  const typeMap = {
+    "Navigate To": "goto", "Click": "click", "Input Text": "fill",
+    "Get Text": "get_text", "Wait For Element": "wait_for",
+    "Screenshot": "screenshot", "Execute JavaScript": "evaluate",
+    "Select Option": "select", "Check Checkbox": "check",
+    "Upload File": "upload", "Handle Dialog": "dialog",
+    "Get Attribute": "get_attribute", "Scroll To": "scroll",
+    "Hover": "hover", "Press Key": "press",
+  };
+  const paramMap = {
+    "goto": { url: "url" }, "click": { selector: "selector" },
+    "fill": { selector: "selector", text: "value" },
+    "get_text": { selector: "selector" },
+    "wait_for": { selector: "selector", timeout: "timeout" },
+    "screenshot": { path: "path" }, "evaluate": { script: "script" },
+    "select": { selector: "selector", value: "value" },
+    "check": { selector: "selector" },
+    "upload": { selector: "selector", file: "file" },
+    "dialog": { action: "action" },
+    "get_attribute": { selector: "selector", attribute: "attribute" },
+    "scroll": { selector: "selector" }, "hover": { selector: "selector" },
+    "press": { key: "key" },
+  };
+  const recipe = {
+    name: $("wf-name").value || "Untitled",
+    engine: "rpaforge",
+    steps: wfSteps.map(s => {
+      const t = typeMap[s.name] || "click";
+      const pm = paramMap[t] || {};
+      const step = { type: t };
+      for (const [uiKey, stepKey] of Object.entries(pm)) {
+        if (s.params[uiKey]) step[stepKey] = s.params[uiKey];
+      }
+      return step;
+    }),
+  };
+  $("wf-json").value = JSON.stringify(recipe, null, 2);
+}
+
+function initWorkflowBuilder() {
+  const newBtn = $("rpa-new-workflow");
+  if (newBtn) newBtn.addEventListener("click", openWorkflowBuilder);
+  
+  const addBtn = $("wf-add-step");
+  if (addBtn) addBtn.addEventListener("click", () => {
+    const sel = $("wf-activity-select");
+    const idx = parseInt(sel.value);
+    if (isNaN(idx) || !wfActivities[idx]) {
+      toast("Choose an activity first", "error");
+      return;
+    }
+    wfSteps.push({ name: wfActivities[idx].name, params: {} });
+    renderWfSteps();
+    sel.value = "";
+  });
+  
+  const saveBtn = $("wf-save-btn");
+  if (saveBtn) saveBtn.addEventListener("click", async () => {
+    const name = $("wf-name").value.trim();
+    if (!name) { toast("Enter a workflow name", "error"); return; }
+    if (wfSteps.length === 0) { toast("Add at least one step", "error"); return; }
+    try {
+      const recipe = JSON.parse($("wf-json").value);
+      await req("POST", "/api/rpa/recipes", JSON.stringify(recipe));
+      toast(`Workflow "${name}" saved.`, "success");
+      closeModal($("modal-workflow"));
+      renderRpaRecipes();
+    } catch (e) {
+      toast(`Save failed: ${e.message || e}`, "error");
+    }
+  });
+  
+  const expBtn = $("wf-export-btn");
+  if (expBtn) expBtn.addEventListener("click", () => {
+    const blob = new Blob([$("wf-json").value], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = ($("wf-name").value || "workflow") + ".json";
+    a.click();
+    toast("Workflow exported.", "success");
+  });
+  
+  // Import JSON.
+  const impBtn = $("rpa-import-btn");
+  const impFile = $("rpa-import-file");
+  if (impBtn && impFile) {
+    impBtn.addEventListener("click", () => impFile.click());
+    impFile.addEventListener("change", async () => {
+      const f = impFile.files[0];
+      if (!f) return;
+      try {
+        const text = await f.text();
+        const recipe = JSON.parse(text);
+        if (!recipe.name || !Array.isArray(recipe.steps)) {
+          throw new Error("Invalid workflow JSON");
+        }
+        await req("POST", "/api/rpa/recipes", JSON.stringify(recipe));
+        toast(`Workflow "${recipe.name}" imported.`, "success");
+        renderRpaRecipes();
+      } catch (e) {
+        toast(`Import failed: ${e.message || e}`, "error");
+      }
+      impFile.value = "";
+    });
+  }
 }
 
 async function renderRpaJobs() {
@@ -2464,4 +2668,5 @@ $("btn-rpa-create").addEventListener("click", async () => {
   if (sf) sf.addEventListener("submit", onSyncStart);
   const rf = $("form-rpa-run");
   if (rf) rf.addEventListener("submit", onRpaRun);
+  initWorkflowBuilder();
 })();

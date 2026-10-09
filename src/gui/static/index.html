@@ -910,6 +910,11 @@
           <button class="ps-tab" data-tab="jobs">Jobs</button>
         </div>
         <div class="ps-tabpane active" data-pane="recipes">
+          <div style="display:flex;gap:8px;margin-bottom:12px">
+            <button type="button" class="ps-btn primary sm" id="rpa-new-workflow">+ New Workflow</button>
+            <button type="button" class="ps-btn ghost sm" id="rpa-import-btn">⬆ Import JSON</button>
+            <input type="file" id="rpa-import-file" accept=".json" hidden>
+          </div>
           <div id="rpa-recipes-list" class="ps-groups-list"></div>
           <p class="ps-hint" style="margin-top:8px">Workflows automate multi-step browser tasks across your anti-detect profiles — form filling, data extraction, scheduled runs.</p>
         </div>
@@ -934,6 +939,40 @@
         </div>
         <div class="ps-tabpane" data-pane="jobs">
           <div id="rpa-jobs-list" class="ps-groups-list"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= Workflow Builder modal ================= -->
+  <div id="modal-workflow" class="ps-overlay center" hidden>
+    <div class="ps-modal ps-pop ps-modal-lg">
+      <div class="ps-drawer-h">
+        <div><div class="ps-eyebrow">Automation</div><div class="ps-drawer-title">Workflow Builder</div></div>
+        <button class="ps-x" data-close aria-label="Close">&#10005;</button>
+      </div>
+      <div class="ps-form" style="padding:16px">
+        <div class="ps-field">
+          <label class="ps-flabel" for="wf-name">Workflow name</label>
+          <input class="ps-in" id="wf-name" placeholder="My automation">
+        </div>
+        <div class="ps-field">
+          <label class="ps-flabel">Steps <span class="ps-flabel-hint">(click + to add)</span></label>
+          <div id="wf-steps" class="ps-groups-list"></div>
+          <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+            <select class="ps-in" id="wf-activity-select" style="flex:1;min-width:200px">
+              <option value="">Choose activity…</option>
+            </select>
+            <button type="button" class="ps-btn ghost sm" id="wf-add-step">+ Add step</button>
+          </div>
+        </div>
+        <div class="ps-field">
+          <label class="ps-flabel" for="wf-json">JSON preview</label>
+          <textarea class="ps-in ps-mono" id="wf-json" rows="6" readonly></textarea>
+        </div>
+        <div class="ps-modal-foot">
+          <button type="button" class="ps-btn ghost" id="wf-export-btn">⬇ Export JSON</button>
+          <button type="button" class="ps-btn primary" id="wf-save-btn">💾 Save workflow</button>
         </div>
       </div>
     </div>
@@ -1153,56 +1192,9 @@
   </div>
 
   <!-- ================= RPA modal (Phase 7) ================= -->
-  <div id="modal-rpa" class="ps-overlay center" hidden>
-    <div class="ps-modal ps-modal-wide ps-pop">
-      <div class="ps-drawer-h">
-        <div><div class="ps-eyebrow">Automation</div><div class="ps-drawer-title">RPA Recipes</div></div>
-        <button class="ps-x" data-close aria-label="Close">&#10005;</button>
-      </div>
-      <div class="ps-form">
-        <div class="ps-field">
-          <label class="ps-flabel">Recipes</label>
-          <div id="rpa-recipes" class="ps-bulk-result"><div class="ps-empty">Loading&hellip;</div></div>
-        </div>
-        <div class="ps-row">
-          <div class="ps-field">
-            <label class="ps-flabel" for="rpa-profile">Profile</label>
-            <select class="ps-in" id="rpa-profile"></select>
-          </div>
-          <div class="ps-field">
-            <label class="ps-flabel" for="rpa-data">Data file <span class="ps-flabel-hint">(CSV/XLSX, optional)</span></label>
-            <input class="ps-in" id="rpa-data" type="text" placeholder="/path/to/leads.csv">
-          </div>
-          <div class="ps-field">
-            <label class="ps-flabel" for="rpa-headless">Window</label>
-            <select class="ps-in" id="rpa-headless">
-              <option value="1">Headless (server)</option>
-              <option value="0">Visible</option>
-            </select>
-          </div>
-        </div>
-        <div class="ps-field">
-          <label class="ps-flabel" for="rpa-recipe-json">New recipe (JSON)</label>
-          <textarea class="ps-in" id="rpa-recipe-json" rows="4"
-            placeholder='{"name":"Signup","base_url":"https://example.com","flow":[]}'></textarea>
-        </div>
-        <div class="ps-field">
-          <button type="button" class="ps-btn ghost" id="btn-rpa-create">+ Save recipe from JSON</button>
-          <button type="button" class="ps-btn ghost" id="btn-rpa-refresh">Refresh</button>
-        </div>
-        <div class="ps-field">
-          <label class="ps-flabel">Jobs</label>
-          <div id="rpa-jobs" class="ps-bulk-result"><div class="ps-empty">No jobs yet.</div></div>
-        </div>
-      </div>
-      <div class="ps-modal-foot">
-        <button type="button" class="ps-btn ghost" data-close>Close</button>
-      </div>
-    </div>
-  </div>
 
   <div id="toasts" class="ps-toasts" aria-live="polite"></div>
 
-  <script src="app.js?v=rpa1" defer></script>
+  <script src="app.js?v=wf2" defer></script>
 </body>
 </html>
