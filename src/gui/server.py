@@ -1713,6 +1713,50 @@ def create_app() -> FastAPI:
         except KeyError:
             raise HTTPException(404, "job not found")
 
+    @app.get("/api/geoip/{ip}")
+    def geoip_lookup(ip: str):
+        """GeoIP lookup for profile table (AdsPower-style flags)."""
+        try:
+            from ..proxy import geoip
+            r = geoip.lookup(ip)
+            return {
+                "country_code": r.get("country_code"),
+                "country": r.get("country"),
+                "city": r.get("city"),
+                "timezone": r.get("timezone"),
+            }
+        except Exception as e:
+            return {"error": str(e)[:100]}
+
+    @app.get("/api/browsers/status")
+    def browsers_status():
+        """Browser download status (AdsPower-style download manager)."""
+        import os
+        result = {}
+        # Camoufox.
+        try:
+            from ..engines import camoufox_engine
+            cf_path = camoufox_engine.get_binary_path()
+            result["camoufox"] = {
+                "name": "Firefox (Camoufox)",
+                "installed": bool(cf_path and os.path.exists(cf_path)),
+                "path": cf_path,
+            }
+        except Exception as e:
+            result["camoufox"] = {"name": "Firefox (Camoufox)", "installed": False, "error": str(e)[:100]}
+        # Patchright/Chromium.
+        try:
+            from ..engines import patchright_engine
+            pr_path = patchright_engine.get_binary_path()
+            result["patchright"] = {
+                "name": "Chromium (Patchright)",
+                "installed": bool(pr_path and os.path.exists(pr_path)),
+                "path": pr_path,
+            }
+        except Exception as e:
+            result["patchright"] = {"name": "Chromium (Patchright)", "installed": False, "error": str(e)[:100]}
+        return result
+
     @app.post("/api/rpa/jobs/{job_id}/stop")
     def rpa_job_stop(job_id: str):
         """Ask a running job to stop after the current row."""

@@ -434,3 +434,8 @@ select.ps-in { cursor: pointer; }
 .ps-radio-row { display: flex; gap: 20px; }
 .ps-radio { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
 .ps-radio input { accent-color: var(--accent); }
+
+/* AdsPower-style profile table */
+.ps-ip { display: flex; flex-direction: column; gap: 2px; }
+.ps-geo { font-size: 11px; color: var(--dim); }
+.ps-dot-live { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #30d158; margin-left: 6px; }

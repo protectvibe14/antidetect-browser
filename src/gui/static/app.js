@@ -35,6 +35,7 @@ async function req(method, path, body, opts = {}) {
 }
 
 const api = {
+  get: (path) => req("GET", path),
   listProfiles: () => req("GET", "/api/profiles").then(d => d.profiles || []),
   createProfile: (p) => req("POST", "/api/profiles", JSON.stringify(p)),
   deleteProfile: (name) => req("DELETE", "/api/profiles/" + encodeURIComponent(name)),
@@ -315,41 +316,47 @@ function renderTable() {
     if (b) b.addEventListener("click", () => openModal("modal-new"));
     return;
   }
-  body.innerHTML = rows.map(p => {
+  body.innerHTML = rows.map((p, idx) => {
     const name = esc(p.name);
     const starting = p.status === "starting" || p.status === "downloading";
     const running = p.status === "running";
     const dl = p.status === "downloading";
-    const launchBtn = starting
-      ? `<button class="ps-btn ghost sm" disabled>${dl ? "Downloading browser&hellip;" : "Starting&hellip;"}</button>`
+    // Short ID from name hash (like AdsPower's k1f5o5x7).
+    let hid = 0;
+    for (let i = 0; i < p.name.length; i++) hid = ((hid << 5) - hid + p.name.charCodeAt(i)) | 0;
+    const shortId = "k" + (hid >>> 0).toString(36).slice(0, 7);
+    // IP with geo (from proxy).
+    let ipHtml = `<span class="ps-proxy off">—</span>`;
+    if (p.proxy_label && p.proxy_label !== "Direct") {
+      const host = p.proxy_label.split(":")[0];
+      ipHtml = `<div class="ps-ip"><span class="ps-proxy"><span class="ps-proxy-ic">&#8646;</span>${esc(p.proxy_label)}</span><span class="ps-geo" data-host="${esc(host)}"></span></div>`;
+    }
+    const actionBtn = starting
+      ? `<button class="ps-btn ghost sm" disabled>${dl ? "Downloading…" : "Starting…"}</button>`
       : running
-        ? `<button class="ps-btn ghost sm" data-act="stop">&#9632; Stop</button>`
-        : `<button class="ps-btn primary sm" data-act="launch">&#9654; Launch</button>`;
+        ? `<button class="ps-btn danger sm" data-act="stop">⏹ Close</button>`
+        : `<button class="ps-btn primary sm" data-act="launch">🛡 Open</button>`;
     const tag = p.client_tag
       ? `<span class="ps-tag">${esc(p.client_tag)}</span>`
-      : `<span class="ps-tag none">&mdash;</span>`;
-    const proxy = p.proxy_label
-      ? `<span class="ps-proxy"><span class="ps-proxy-ic">&#8646;</span>${esc(p.proxy_label)}</span>`
-      : `<span class="ps-proxy off">Direct</span>`;
+      : `—`;
     const group = p.group_name
       ? `<span class="ps-tag group">${esc(p.group_name)}</span>`
-      : `<span class="ps-tag none">&mdash;</span>`;
+      : `Ungrouped`;
+    const remark = p.remark ? esc(p.remark) : "—";
     return `<tr data-name="${name}">
       <td><input type="checkbox" class="row-select" data-name="${name}"${state.selected.has(name) ? " checked" : ""}></td>
-      <td>${statusCell(p)}</td>
-      <td><div class="ps-name-row"><span class="ps-name">${name}</span></div></td>
+      <td class="dim">${idx + 1}</td>
+      <td><span class="ps-mono dim">${shortId}</span></td>
       <td>${group}</td>
-      <td>${tag}</td>
-      <td><span class="ps-os">${esc(p.os || "?")}</span></td>
-      <td>${proxy}</td>
+      <td><div class="ps-name-row"><span class="ps-name">${name}</span>${running ? ' <span class="ps-dot-live"></span>' : ''}</div></td>
+      <td>${ipHtml}</td>
       <td><span class="ps-mono dim">${esc(relTime(p.last_used))}</span></td>
-      <td><div class="ps-actions">
-        ${launchBtn}
-        <button class="ps-btn ghost sm" data-act="health">&#10003; Health</button>
-        <button class="ps-btn ghost sm" data-act="warmup">&#9728; Warm up</button>
-        <button class="ps-btn ghost sm" data-act="edit">&#9998; Edit</button>
-        <button class="ps-btn ghost sm" data-act="cookies">&#127850; Cookies</button>
-        <button class="ps-btn danger sm" data-act="delete">&#10005;</button>
+      <td>—</td>
+      <td>${tag}</td>
+      <td class="dim">${remark}</td>
+      <td><div class="ps-actions" style="justify-content:flex-end">
+        ${actionBtn}
+        <button class="ps-btn ghost sm" data-act="edit" title="Edit">⋮</button>
       </div></td>
     </tr>`;
   }).join("");
@@ -364,6 +371,20 @@ function renderTable() {
       else state.selected.delete(name);
       renderBulkBar();
     });
+  });
+  // Geo lookup for proxy IPs (AdsPower-style flags).
+  body.querySelectorAll(".ps-geo[data-host]").forEach(async el => {
+    const host = el.dataset.host;
+    if (!host || !/^\d+\.\d+\.\d+\.\d+$/.test(host)) return;
+    try {
+      const r = await req("GET", `/api/geoip/${host}`);
+      if (r.country_code) {
+        // Flag emoji from country code.
+        const cc = r.country_code.toUpperCase();
+        const flag = String.fromCodePoint(...[...cc].map(c => 0x1F1E6 + c.charCodeAt(0) - 65));
+        el.textContent = `${flag} ${cc} - ${r.country || ""}`;
+      }
+    } catch {}
   });
   renderBulkBar();
 }
@@ -1757,6 +1778,29 @@ function renderHealth(h) {
 
 /* ---------------- Top bar wiring ---------------- */
 $("btn-new").addEventListener("click", () => showView("new-profile"));
+
+// Browser download manager (AdsPower-style).
+async function openDownloads() {
+  openModal("modal-downloads");
+  const list = $("dl-list");
+  list.innerHTML = `<div class="ps-empty">Checking…</div>`;
+  try {
+    const st = await api.get("/api/browsers/status");
+    list.innerHTML = Object.entries(st).map(([key, b]) => `
+      <div class="ps-field" style="border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <strong>${esc(b.name)}</strong>
+          <span class="ps-tag ${b.installed ? "" : "none"}">${b.installed ? "✓ Installed" : "Not installed"}</span>
+        </div>
+        ${b.installed ? `<p class="ps-hint" style="margin:4px 0 0">${esc((b.path || "").slice(0, 60))}…</p>`
+          : `<p class="ps-hint" style="margin:4px 0 0">Will auto-download on first launch.</p>`}
+      </div>`).join("");
+  } catch (e) {
+    list.innerHTML = `<div class="ps-empty">Failed: ${esc(e.message || e)}</div>`;
+  }
+}
+const bdl = $("btn-downloads");
+if (bdl) bdl.addEventListener("click", openDownloads);
 $("nav-profiles").addEventListener("click", () => showView("profiles"));
 $("nav-sync").addEventListener("click", () => openSync());
 $("nav-bulk").addEventListener("click", () => {

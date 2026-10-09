@@ -67,6 +67,9 @@
           <div><div class="ps-stat-val" id="stat-proxies">0</div><div class="ps-stat-label">Proxies</div></div>
         </div>
         <div style="flex:1"></div>
+        <button class="ps-btn ghost" id="btn-downloads" title="Browser downloads">
+          <span id="dl-ic">⬇</span> <span id="dl-label">Browsers</span>
+        </button>
         <span class="ps-user-chip" id="user-chip" hidden>
           <span id="user-name"></span><span class="ps-role" id="user-role"></span>
           <button class="ps-btn ghost sm" id="btn-logout" title="Sign out">Logout</button>
@@ -104,8 +107,9 @@
             <thead>
               <tr>
                 <th><input type="checkbox" id="select-all" title="Select all"></th>
-                <th>Status</th><th>Name</th><th>Group</th><th>Client tag</th><th>OS</th>
-                <th>Proxy</th><th>Last used</th><th style="text-align:right">Actions</th>
+                <th>No.</th><th>ID</th><th>Group</th><th>Name</th><th>IP</th>
+                <th>Last opened</th><th>Platform</th><th>Tags</th><th>Remark</th>
+                <th style="text-align:right">Action</th>
               </tr>
             </thead>
             <tbody id="profiles-body">
@@ -324,6 +328,20 @@
           <button type="submit" class="ps-btn primary">Create</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- ================= Browser downloads modal ================= -->
+  <div id="modal-downloads" class="ps-overlay center" hidden>
+    <div class="ps-modal ps-pop" style="max-width:520px">
+      <div class="ps-drawer-h">
+        <h3>Browser Downloads</h3>
+        <button type="button" class="ps-btn ghost sm" data-close>✕</button>
+      </div>
+      <div class="ps-form" style="padding:16px">
+        <p class="ps-hint">Required browsers are downloaded automatically on first launch. You can also download them manually here.</p>
+        <div id="dl-list"></div>
+      </div>
     </div>
   </div>
 
@@ -1167,6 +1185,6 @@
 
   <div id="toasts" class="ps-toasts" aria-live="polite"></div>
 
-  <script src="app.js?v=overview1" defer></script>
+  <script src="app.js?v=table1" defer></script>
 </body>
 </html>
