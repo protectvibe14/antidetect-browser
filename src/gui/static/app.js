@@ -1783,21 +1783,50 @@ $("btn-new").addEventListener("click", () => showView("new-profile"));
 async function openDownloads() {
   openModal("modal-downloads");
   const list = $("dl-list");
-  list.innerHTML = `<div class="ps-empty">Checking…</div>`;
-  try {
-    const st = await api.get("/api/browsers/status");
-    list.innerHTML = Object.entries(st).map(([key, b]) => `
-      <div class="ps-field" style="border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:8px">
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <strong>${esc(b.name)}</strong>
-          <span class="ps-tag ${b.installed ? "" : "none"}">${b.installed ? "✓ Installed" : "Not installed"}</span>
-        </div>
-        ${b.installed ? `<p class="ps-hint" style="margin:4px 0 0">${esc((b.path || "").slice(0, 60))}…</p>`
-          : `<p class="ps-hint" style="margin:4px 0 0">Will auto-download on first launch.</p>`}
-      </div>`).join("");
-  } catch (e) {
-    list.innerHTML = `<div class="ps-empty">Failed: ${esc(e.message || e)}</div>`;
-  }
+  const render = async () => {
+    list.innerHTML = `<div class="ps-empty">Checking…</div>`;
+    try {
+      const st = await api.get("/api/browsers/status");
+      list.innerHTML = Object.entries(st).map(([key, b]) => `
+        <div class="ps-field" style="border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:8px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <strong>${esc(b.name)}${b.version ? ` <span class="ps-hint">v${esc(String(b.version))}</span>` : ""}</strong>
+            ${b.installed
+              ? `<span class="ps-tag">✓ Installed</span>`
+              : `<button class="ps-btn primary sm" data-dl="${key}">⬇ Install</button>`}
+          </div>
+          ${b.installed ? "" : `<p class="ps-hint" style="margin:8px 0 0">Not installed. Click Install to download now, or it will auto-download on first launch.</p>`}
+        </div>`).join("");
+      list.querySelectorAll("[data-dl]").forEach(btn => {
+        btn.addEventListener("click", async () => {
+          btn.disabled = true;
+          btn.textContent = "Downloading…";
+          try {
+            await req("POST", `/api/browsers/download/${btn.dataset.dl}`);
+            toast("Download started. This may take a few minutes.", "success");
+            // Poll status.
+            const poll = setInterval(async () => {
+              try {
+                const st2 = await api.get("/api/browsers/status");
+                if (st2[btn.dataset.dl] && st2[btn.dataset.dl].installed) {
+                  clearInterval(poll);
+                  render();
+                }
+              } catch {}
+            }, 5000);
+            setTimeout(() => clearInterval(poll), 600000);
+          } catch (e) {
+            toast(`Download failed: ${e.message || e}`, "error");
+            btn.disabled = false;
+            btn.textContent = "⬇ Install";
+          }
+        });
+      });
+    } catch (e) {
+      list.innerHTML = `<div class="ps-empty">Failed: ${esc(e.message || e)}</div>`;
+    }
+  };
+  render();
 }
 const bdl = $("btn-downloads");
 if (bdl) bdl.addEventListener("click", openDownloads);

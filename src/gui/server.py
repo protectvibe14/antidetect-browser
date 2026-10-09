@@ -18,7 +18,7 @@ import secrets
 import string
 import threading
 
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -1731,31 +1731,49 @@ def create_app() -> FastAPI:
     @app.get("/api/browsers/status")
     def browsers_status():
         """Browser download status (AdsPower-style download manager)."""
-        import os
         result = {}
         # Camoufox.
         try:
-            from ..engines import camoufox_engine
-            cf_path = camoufox_engine.get_binary_path()
+            from ..engines.camoufox import CamoufoxEngine
+            eng = CamoufoxEngine()
             result["camoufox"] = {
                 "name": "Firefox (Camoufox)",
-                "installed": bool(cf_path and os.path.exists(cf_path)),
-                "path": cf_path,
+                "installed": bool(eng.binary_present()),
+                "version": eng.installed_version(),
             }
         except Exception as e:
             result["camoufox"] = {"name": "Firefox (Camoufox)", "installed": False, "error": str(e)[:100]}
         # Patchright/Chromium.
         try:
-            from ..engines import patchright_engine
-            pr_path = patchright_engine.get_binary_path()
+            from ..engines.patchright_engine import PatchrightEngine
+            eng = PatchrightEngine()
+            present = eng.binary_present() if hasattr(eng, "binary_present") else False
             result["patchright"] = {
                 "name": "Chromium (Patchright)",
-                "installed": bool(pr_path and os.path.exists(pr_path)),
-                "path": pr_path,
+                "installed": bool(present),
+                "version": eng.installed_version() if hasattr(eng, "installed_version") else None,
             }
         except Exception as e:
             result["patchright"] = {"name": "Chromium (Patchright)", "installed": False, "error": str(e)[:100]}
         return result
+
+    @app.post("/api/browsers/download/{engine}")
+    def browsers_download(engine: str, background_tasks: BackgroundTasks):
+        """Trigger browser download (AdsPower-style manual install)."""
+        if engine not in ("camoufox", "patchright"):
+            raise HTTPException(400, "unknown engine")
+        def _do():
+            try:
+                if engine == "camoufox":
+                    from ..engines.camoufox import CamoufoxEngine
+                    CamoufoxEngine().ensure_binary()
+                else:
+                    from ..engines.patchright_engine import PatchrightEngine
+                    PatchrightEngine().ensure_binary()
+            except Exception:
+                pass
+        background_tasks.add_task(_do)
+        return {"started": True, "engine": engine}
 
     @app.post("/api/rpa/jobs/{job_id}/stop")
     def rpa_job_stop(job_id: str):
