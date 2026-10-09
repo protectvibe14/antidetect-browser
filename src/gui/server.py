@@ -310,6 +310,8 @@ class ProfileUpdate(BaseModel):
     platform_acct: str | None = None
     startup_urls: list | None = None
     custom_proxy: dict | None = None  # {type, host, port, username, password, save_name}
+    remark: str | None = None
+    cookie_json: str | None = None
     # Fingerprint modes (AdsPower-style)
     timezone_mode: str | None = None
     language_mode: str | None = None
@@ -659,6 +661,8 @@ def create_app() -> FastAPI:
         # Platform tab fields (top-level columns).
         view["platform_acct"] = persona.get("platform_acct")
         view["startup_urls"] = persona.get("startup_urls", [])
+        view["remark"] = persona.get("remark")
+        view["cookie_json"] = persona.get("cookie_json")
         return {"profile": view}
 
     @app.put("/api/profiles/{name}")
@@ -792,9 +796,10 @@ def create_app() -> FastAPI:
             persona = _profile_manager.update(name, **fields)
         except (KeyError, ValueError) as exc:
             raise HTTPException(400, str(exc))
-        # platform_acct and startup_urls are top-level columns, not
-        # fingerprint fields — update them directly.
-        if body.platform_acct is not None or body.startup_urls is not None:
+        # platform_acct, startup_urls, remark, cookie_json are top-level
+        # columns, not fingerprint fields — update them directly.
+        if (body.platform_acct is not None or body.startup_urls is not None
+                or body.remark is not None or body.cookie_json is not None):
             import json as _json
             with _profile_manager._connect() as _conn:
                 if body.platform_acct is not None:
@@ -805,6 +810,14 @@ def create_app() -> FastAPI:
                     _conn.execute(
                         "UPDATE profiles SET startup_urls = ? WHERE name = ?",
                         (_json.dumps(body.startup_urls), name))
+                if body.remark is not None:
+                    _conn.execute(
+                        "UPDATE profiles SET remark = ? WHERE name = ?",
+                        (body.remark or None, name))
+                if body.cookie_json is not None:
+                    _conn.execute(
+                        "UPDATE profiles SET cookie_json = ? WHERE name = ?",
+                        (body.cookie_json or None, name))
         return {"profile": _profile_view(persona)}
 
     @app.delete("/api/profiles/{name}")

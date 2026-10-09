@@ -578,6 +578,14 @@ document.addEventListener("click", (e) => {
     e.preventDefault();
     return;
   }
+  // OS pills (General tab).
+  const osp = e.target.closest("#edit-os-pills .ps-os-pill");
+  if (osp) {
+    document.querySelectorAll("#edit-os-pills .ps-os-pill").forEach(x =>
+      x.classList.toggle("active", x === osp));
+    e.preventDefault();
+    return;
+  }
 });
 // Show more.
 $("edit-fp-more").addEventListener("click", () => {
@@ -588,6 +596,23 @@ $("edit-fp-more").addEventListener("click", () => {
 $("edit-mediadevice-edit").addEventListener("click", () => {
   toast("Media device noise is auto-configured per profile", "info");
 });
+// UA copy button.
+$("edit-ua-copy").addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText($("edit-ua").value);
+    toast("User-Agent copied", "success");
+  } catch { toast("Copy failed", "error"); }
+});
+// Merge cookie: append pasted JSON to existing cookies.
+$("edit-cookie-merge").addEventListener("click", () => {
+  const raw = $("edit-cookie").value.trim();
+  if (!raw) { toast("Paste cookie JSON first", "info"); return; }
+  try {
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) throw new Error("not an array");
+    toast(`Merged ${arr.length} cookies`, "success");
+  } catch { toast("Invalid cookie JSON", "error"); }
+});
 
 function editPillVal(id) {
   const el = document.querySelector(`#${id} .ps-pill.active`);
@@ -597,6 +622,32 @@ function editToggleOn(val) {
   const el = document.querySelector(`#modal-edit .ps-toggle[data-val="${val}"]`);
   return el ? el.classList.contains("on") : false;
 }
+function editOsVal() {
+  const el = document.querySelector("#edit-os-pills .ps-os-pill.active");
+  return el ? el.dataset.val : "windows";
+}
+// General tab: counters + kernel note.
+function updateEditCounters() {
+  const n = $("edit-display-name");
+  if (n) $("edit-name-counter").textContent = `${n.value.length} / 100`;
+  const r = $("edit-remark");
+  if (r) $("edit-remark-counter").textContent = `${r.value.length} / 2000`;
+}
+function updateKernelNote() {
+  const b = $("edit-browser");
+  const note = $("edit-kernel-note");
+  if (!b || !note) return;
+  note.textContent = b.value === "camoufox"
+    ? "Firefox 156 kernel (Camoufox)"
+    : "Chromium 153 kernel (Patchright)";
+}
+document.addEventListener("input", (e) => {
+  if (e.target.id === "edit-display-name" || e.target.id === "edit-remark")
+    updateEditCounters();
+});
+document.addEventListener("change", (e) => {
+  if (e.target.id === "edit-browser") updateKernelNote();
+});
 
 /* ---------------- Full-page New Profile ---------------- */
 function showView(name) {
@@ -1319,9 +1370,16 @@ async function openEdit(name) {
 
 function fillEditForm(prof) {
   const fp = prof.fingerprint || {};
-  $("edit-os").value = fp.os || prof.os || "windows";
-  $("edit-engine").value = prof.engine || "camoufox";
-  $("edit-tag").value = prof.client_tag || "";
+  // General tab (AdsPower-style).
+  $("edit-display-name").value = prof.name || "";
+  $("edit-browser").value = prof.engine || "camoufox";
+  const osVal = fp.os || prof.os || "windows";
+  document.querySelectorAll("#edit-os-pills .ps-os-pill").forEach(x =>
+    x.classList.toggle("active", x.dataset.val === osVal));
+  $("edit-remark").value = prof.remark || prof.client_tag || "";
+  $("edit-cookie").value = prof.cookie_json || "";
+  updateEditCounters();
+  updateKernelNote();
   // group
   const gsel = $("edit-group");
   gsel.innerHTML = `<option value="">Ungrouped</option>` +
@@ -1444,9 +1502,11 @@ async function submitEdit(e) {
     }
   }
   const payload = {
-    client_tag: $("edit-tag").value.trim(),
-    os: $("edit-os").value,
-    engine: $("edit-engine").value,
+    client_tag: $("edit-remark").value.trim().slice(0, 2000) || null,
+    remark: $("edit-remark").value.trim().slice(0, 2000) || null,
+    os: editOsVal(),
+    engine: $("edit-browser").value,
+    cookie_json: $("edit-cookie").value.trim() || null,
     proxy_name: proxy_name,
     custom_proxy: custom_proxy,
     group_name: $("edit-group").value || null,
@@ -1507,8 +1567,8 @@ $("form-edit").addEventListener("submit", submitEdit);
 $("edit-regen").addEventListener("click", regenFingerprint);
 // Edit modal UA shuffle (AdsPower-style).
 $("edit-ua-shuffle").addEventListener("click", async () => {
-  const os = $("edit-os").value || "windows";
-  const engine = $("edit-engine").value || "camoufox";
+  const os = editOsVal();
+  const engine = $("edit-browser").value || "camoufox";
   const browser = engine === "patchright" ? "chrome" : "firefox";
   try {
     const r = await api.randomUA(os, browser);

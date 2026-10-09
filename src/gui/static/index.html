@@ -344,26 +344,63 @@
       <form id="form-edit" class="ps-form ps-edit-main">
         <input type="hidden" id="edit-name">
         <div class="ps-tabpane active" data-pane="general">
-          <div class="ps-row">
-            <div class="ps-field">
-              <label class="ps-flabel" for="edit-os">Operating system</label>
-              <select class="ps-in" id="edit-os">
-                <option value="windows">Windows</option>
-                <option value="macos">macOS</option>
-                <option value="linux">Linux</option>
-              </select>
-            </div>
-            <div class="ps-field">
-              <label class="ps-flabel" for="edit-engine">Browser engine</label>
-              <select class="ps-in" id="edit-engine">
-                <option value="camoufox">Firefox (Camoufox)</option>
-                <option value="patchright">Chromium (Patchright)</option>
-              </select>
+          <div class="ps-field">
+            <label class="ps-flabel" for="edit-display-name">Name</label>
+            <div class="ps-in-wrap">
+              <input class="ps-in" id="edit-display-name" type="text" maxlength="100" placeholder="Profile name">
+              <span class="ps-counter" id="edit-name-counter">0 / 100</span>
             </div>
           </div>
           <div class="ps-field">
-            <label class="ps-flabel" for="edit-tag">Client tag <span class="ps-flabel-hint">(remark)</span></label>
-            <input class="ps-in" id="edit-tag" type="text" placeholder="e.g. acme">
+            <label class="ps-flabel" for="edit-browser">Browser</label>
+            <select class="ps-in" id="edit-browser">
+              <option value="camoufox">🦊 Firefox (Camoufox)</option>
+              <option value="patchright">🌐 Chromium (Patchright)</option>
+            </select>
+            <p class="ps-hint" id="edit-kernel-note"></p>
+          </div>
+          <div class="ps-field">
+            <label class="ps-flabel">OS</label>
+            <div class="ps-os-pills" id="edit-os-pills">
+              <button type="button" class="ps-os-pill" data-val="windows" title="Windows">🪟</button>
+              <button type="button" class="ps-os-pill" data-val="macos" title="macOS">🍎</button>
+              <button type="button" class="ps-os-pill" data-val="linux" title="Linux">🐧</button>
+              <button type="button" class="ps-os-pill" data-val="android" title="Android">🤖</button>
+              <button type="button" class="ps-os-pill" data-val="ios" title="iOS">📱</button>
+            </div>
+          </div>
+          <div class="ps-field">
+            <label class="ps-flabel" for="edit-ua">User-Agent</label>
+            <div class="ps-row">
+              <div class="ps-field" style="max-width:120px">
+                <select class="ps-in" id="edit-ua-filter">
+                  <option value="all">All</option>
+                  <option value="chrome">Chrome</option>
+                  <option value="firefox">Firefox</option>
+                </select>
+              </div>
+              <div class="ps-field">
+                <div class="ps-in-wrap">
+                  <input class="ps-in ps-mono" id="edit-ua" type="text">
+                  <button type="button" class="ps-icon-btn" id="edit-ua-copy" title="Copy">📋</button>
+                  <button type="button" class="ps-icon-btn" id="edit-ua-shuffle" title="Random User-Agent">🔀</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="ps-field">
+            <label class="ps-flabel" for="edit-cookie">Cookie</label>
+            <textarea class="ps-in ps-mono" id="edit-cookie" rows="4" placeholder='[{"name":"...","value":"...","domain":"..."}]'></textarea>
+            <div style="text-align:right;margin-top:4px">
+              <button type="button" class="ps-link" id="edit-cookie-merge">⊕ Merge cookie</button>
+            </div>
+          </div>
+          <div class="ps-field">
+            <label class="ps-flabel" for="edit-remark">Remark</label>
+            <div class="ps-in-wrap">
+              <textarea class="ps-in" id="edit-remark" rows="2" maxlength="2000" placeholder="Enter remark"></textarea>
+              <span class="ps-counter" id="edit-remark-counter">0 / 2000</span>
+            </div>
           </div>
           <div class="ps-field">
             <label class="ps-flabel" for="edit-group">Group</label>
@@ -483,13 +520,6 @@
               <div class="ps-field">
                 <input class="ps-in" id="edit-sh" type="number" min="600" max="4320" placeholder="Height">
               </div>
-            </div>
-          </div>
-          <div class="ps-field">
-            <label class="ps-flabel">User-Agent</label>
-            <div class="ps-in-wrap">
-              <input class="ps-in ps-mono" id="edit-ua" type="text">
-              <button type="button" class="ps-icon-btn" id="edit-ua-shuffle" title="Random User-Agent">🔀</button>
             </div>
           </div>
           <div class="ps-field">
@@ -1063,6 +1093,6 @@
 
   <div id="toasts" class="ps-toasts" aria-live="polite"></div>
 
-  <script src="app.js?v=410ba12" defer></script>
+  <script src="app.js?v=general1" defer></script>
 </body>
 </html>

@@ -296,6 +296,10 @@ class ProfileManager:
                 conn.execute("ALTER TABLE profiles ADD COLUMN platform_acct TEXT")
             if "startup_urls" not in existing:
                 conn.execute("ALTER TABLE profiles ADD COLUMN startup_urls TEXT")
+            if "remark" not in existing:
+                conn.execute("ALTER TABLE profiles ADD COLUMN remark TEXT")
+            if "cookie_json" not in existing:
+                conn.execute("ALTER TABLE profiles ADD COLUMN cookie_json TEXT")
             # Legacy rows predate the engine column: they were all
             # camoufox profiles.
             conn.execute(
@@ -371,6 +375,10 @@ class ProfileManager:
                                  if "group_name" in keys else None)
         persona["platform_acct"] = (row["platform_acct"]
                                     if "platform_acct" in keys else None)
+        persona["remark"] = (row["remark"]
+                             if "remark" in keys else None)
+        persona["cookie_json"] = (row["cookie_json"]
+                                  if "cookie_json" in keys else None)
         if "startup_urls" in keys and row["startup_urls"]:
             try:
                 persona["startup_urls"] = json.loads(row["startup_urls"])
