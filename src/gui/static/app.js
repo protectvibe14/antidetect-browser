@@ -568,6 +568,16 @@ document.addEventListener("click", (e) => {
     e.preventDefault();
     return;
   }
+  // Edit modal tab switching (General/Proxy/Fingerprint/Extensions/Platform).
+  const etab = e.target.closest("#edit-tabs .ps-tab");
+  if (etab) {
+    document.querySelectorAll("#edit-tabs .ps-tab").forEach(x =>
+      x.classList.toggle("active", x === etab));
+    document.querySelectorAll("#form-edit .ps-tabpane").forEach(pn =>
+      pn.classList.toggle("active", pn.dataset.pane === etab.dataset.tab));
+    e.preventDefault();
+    return;
+  }
 });
 // Show more.
 $("edit-fp-more").addEventListener("click", () => {
@@ -1492,14 +1502,7 @@ async function regenFingerprint() {
   }
 }
 
-// tab switching + form wiring (bound once)
-document.querySelectorAll("#edit-tabs .ps-tab").forEach(t =>
-  t.addEventListener("click", () => {
-    document.querySelectorAll("#edit-tabs .ps-tab").forEach(x =>
-      x.classList.toggle("active", x === t));
-    document.querySelectorAll("#form-edit .ps-tabpane").forEach(pn =>
-      pn.classList.toggle("active", pn.dataset.pane === t.dataset.tab));
-  }));
+// tab switching handled by document delegation listener above
 $("form-edit").addEventListener("submit", submitEdit);
 $("edit-regen").addEventListener("click", regenFingerprint);
 // Edit modal UA shuffle (AdsPower-style).
