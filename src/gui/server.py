@@ -1686,7 +1686,19 @@ def create_app() -> FastAPI:
     # (frontend worker creates the bundle later); makedirs keeps StaticFiles
     # from failing on a missing directory.
     os.makedirs(static_dir, exist_ok=True)
-    app.mount("/", StaticFiles(directory=static_dir, html=True),
+
+    # No-cache for JS/CSS during active development (prevents stale UI).
+    from fastapi.staticfiles import StaticFiles as _SF
+
+    class NoCacheStatic(_SF):
+        async def get_response(self, path, scope):
+            resp = await super().get_response(path, scope)
+            if path.endswith((".js", ".css")):
+                resp.headers["Cache-Control"] = (
+                    "no-store, no-cache, must-revalidate")
+            return resp
+
+    app.mount("/", NoCacheStatic(directory=static_dir, html=True),
               name="static")
 
     return app
