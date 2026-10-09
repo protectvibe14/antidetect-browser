@@ -427,54 +427,135 @@
           <p class="ps-hint">Attach a proxy to route this profile's traffic. Timezone and locale stay as configured; use geo-sync on the proxy for full alignment.</p>
         </div>
         <div class="ps-tabpane" data-pane="fingerprint">
-          <div class="ps-row">
-            <div class="ps-field">
-              <label class="ps-flabel" for="edit-tz">Timezone</label>
-              <input class="ps-in" id="edit-tz" type="text" placeholder="e.g. America/New_York">
-            </div>
-            <div class="ps-field">
-              <label class="ps-flabel" for="edit-locale">Locale</label>
-              <input class="ps-in" id="edit-locale" type="text" placeholder="e.g. en-US">
+          <div class="ps-field">
+            <label class="ps-flabel">WebRTC</label>
+            <div class="ps-pills" id="edit-webrtc">
+              <button type="button" class="ps-pill" data-val="forward">Forward</button>
+              <button type="button" class="ps-pill" data-val="replace">Replace</button>
+              <button type="button" class="ps-pill" data-val="real">Real</button>
+              <button type="button" class="ps-pill" data-val="disabled">Disabled</button>
+              <button type="button" class="ps-pill active" data-val="proxy">Proxy UDP</button>
             </div>
           </div>
           <div class="ps-field">
-            <label class="ps-flabel" for="edit-ua">User-Agent</label>
+            <label class="ps-flabel">Timezone</label>
+            <div class="ps-pills" id="edit-tz-mode">
+              <button type="button" class="ps-pill active" data-val="ip">Based on IP</button>
+              <button type="button" class="ps-pill" data-val="real">Real</button>
+              <button type="button" class="ps-pill" data-val="custom">Custom</button>
+            </div>
+            <input class="ps-in" id="edit-tz" type="text" placeholder="e.g. America/New_York" style="margin-top:8px" hidden>
+          </div>
+          <div class="ps-field">
+            <label class="ps-flabel">Location</label>
+            <div class="ps-pills" id="edit-loc-mode">
+              <button type="button" class="ps-pill active" data-val="ip">Based on IP</button>
+              <button type="button" class="ps-pill" data-val="custom">Custom</button>
+              <button type="button" class="ps-pill" data-val="block">Block</button>
+            </div>
+          </div>
+          <div class="ps-field">
+            <label class="ps-flabel">Language</label>
+            <div class="ps-pills" id="edit-lang-mode">
+              <button type="button" class="ps-pill active" data-val="ip">Based on IP</button>
+              <button type="button" class="ps-pill" data-val="custom">Custom</button>
+            </div>
+            <input class="ps-in" id="edit-locale" type="text" placeholder="e.g. en-US" style="margin-top:8px" hidden>
+          </div>
+          <div class="ps-field">
+            <label class="ps-flabel">Display language</label>
+            <div class="ps-pills" id="edit-displang-mode">
+              <button type="button" class="ps-pill active" data-val="based">Based on Language</button>
+              <button type="button" class="ps-pill" data-val="real">Real</button>
+              <button type="button" class="ps-pill" data-val="custom">Custom</button>
+            </div>
+          </div>
+          <div class="ps-field">
+            <label class="ps-flabel">Screen Resolution</label>
+            <div class="ps-pills" id="edit-screen-mode">
+              <button type="button" class="ps-pill active" data-val="predefined">Predefined</button>
+              <button type="button" class="ps-pill" data-val="custom">Custom</button>
+            </div>
+            <div class="ps-row" style="margin-top:8px">
+              <div class="ps-field">
+                <input class="ps-in" id="edit-sw" type="number" min="800" max="7680" placeholder="Width">
+              </div>
+              <div class="ps-field">
+                <input class="ps-in" id="edit-sh" type="number" min="600" max="4320" placeholder="Height">
+              </div>
+            </div>
+          </div>
+          <div class="ps-field">
+            <label class="ps-flabel">User-Agent</label>
             <div class="ps-in-wrap">
               <input class="ps-in ps-mono" id="edit-ua" type="text">
               <button type="button" class="ps-icon-btn" id="edit-ua-shuffle" title="Random User-Agent">🔀</button>
             </div>
           </div>
-          <div class="ps-row">
-            <div class="ps-field">
-              <label class="ps-flabel" for="edit-platform">Platform</label>
-              <input class="ps-in" id="edit-platform" type="text" placeholder="e.g. Win32">
-            </div>
-            <div class="ps-field">
-              <label class="ps-flabel" for="edit-hw">Hardware concurrency</label>
-              <input class="ps-in" id="edit-hw" type="number" min="1" max="64">
-            </div>
-            <div class="ps-field">
-              <label class="ps-flabel" for="edit-mem">Device memory (GB)</label>
-              <input class="ps-in" id="edit-mem" type="number" min="1" max="64">
-            </div>
-          </div>
-          <div class="ps-row">
-            <div class="ps-field">
-              <label class="ps-flabel" for="edit-sw">Screen width</label>
-              <input class="ps-in" id="edit-sw" type="number" min="800" max="7680">
-            </div>
-            <div class="ps-field">
-              <label class="ps-flabel" for="edit-sh">Screen height</label>
-              <input class="ps-in" id="edit-sh" type="number" min="600" max="4320">
+          <div class="ps-field">
+            <label class="ps-flabel">Fonts</label>
+            <div class="ps-pills" id="edit-fonts-mode">
+              <button type="button" class="ps-pill active" data-val="default">Default</button>
+              <button type="button" class="ps-pill" data-val="custom">Custom</button>
             </div>
           </div>
           <div class="ps-field">
-            <label class="ps-flabel" for="edit-webgl-vendor">WebGL vendor</label>
-            <input class="ps-in" id="edit-webgl-vendor" type="text">
+            <label class="ps-flabel">Hardware noise</label>
+            <div class="ps-toggles">
+              <label class="ps-toggle-row"><span>Canvas</span><button type="button" class="ps-toggle" data-val="canvas" role="switch" aria-checked="false"><span class="ps-knob"></span></button></label>
+              <label class="ps-toggle-row"><span>WebGL Image</span><button type="button" class="ps-toggle" data-val="webgl" role="switch" aria-checked="false"><span class="ps-knob"></span></button></label>
+              <label class="ps-toggle-row"><span>AudioContext</span><button type="button" class="ps-toggle" data-val="audio" role="switch" aria-checked="false"><span class="ps-knob"></span></button></label>
+              <label class="ps-toggle-row"><span>Media device [Auto]</span><span><button type="button" class="ps-toggle on" data-val="mediadevice" role="switch" aria-checked="true"><span class="ps-knob"></span></button> <button type="button" class="ps-link" id="edit-mediadevice-edit">Edit</button></span></label>
+              <label class="ps-toggle-row"><span>ClientRects</span><button type="button" class="ps-toggle on" data-val="clientrects" role="switch" aria-checked="true"><span class="ps-knob"></span></button></label>
+              <label class="ps-toggle-row"><span>SpeechVoices</span><button type="button" class="ps-toggle on" data-val="speech" role="switch" aria-checked="true"><span class="ps-knob"></span></button></label>
+            </div>
           </div>
           <div class="ps-field">
-            <label class="ps-flabel" for="edit-webgl-renderer">WebGL renderer</label>
-            <input class="ps-in" id="edit-webgl-renderer" type="text">
+            <label class="ps-flabel">WebGL metadata</label>
+            <div class="ps-pills" id="edit-webgl-mode">
+              <button type="button" class="ps-pill" data-val="real">Real</button>
+              <button type="button" class="ps-pill active" data-val="custom">Custom</button>
+            </div>
+            <div class="ps-field" style="margin-top:8px">
+              <label class="ps-flabel" for="edit-webgl-vendor">Vendor</label>
+              <select class="ps-in" id="edit-webgl-vendor">
+                <option value="Google Inc. (Intel)">Google Inc. (Intel)</option>
+                <option value="Google Inc. (NVIDIA)">Google Inc. (NVIDIA)</option>
+                <option value="Google Inc. (AMD)">Google Inc. (AMD)</option>
+                <option value="Google Inc.">Google Inc.</option>
+              </select>
+            </div>
+            <div class="ps-field">
+              <label class="ps-flabel" for="edit-webgl-renderer">Renderer</label>
+              <input class="ps-in ps-mono" id="edit-webgl-renderer" type="text" placeholder="ANGLE (Intel, ...)">
+            </div>
+          </div>
+          <div class="ps-field">
+            <label class="ps-flabel">WebGPU</label>
+            <div class="ps-pills" id="edit-webgpu-mode">
+              <button type="button" class="ps-pill active" data-val="based">Based on WebGL</button>
+              <button type="button" class="ps-pill" data-val="real">Real</button>
+              <button type="button" class="ps-pill" data-val="disabled">Disabled</button>
+            </div>
+          </div>
+          <div class="ps-field">
+            <button type="button" class="ps-link" id="edit-fp-more">Show more ∨</button>
+          </div>
+          <div id="edit-fp-advanced" hidden>
+            <div class="ps-row">
+              <div class="ps-field">
+                <label class="ps-flabel" for="edit-platform">Platform</label>
+                <input class="ps-in" id="edit-platform" type="text" placeholder="e.g. Win32">
+              </div>
+              <div class="ps-field">
+                <label class="ps-flabel" for="edit-hw">Hardware concurrency</label>
+                <input class="ps-in" id="edit-hw" type="number" min="1" max="64">
+              </div>
+              <div class="ps-field">
+                <label class="ps-flabel" for="edit-mem">Device memory (GB)</label>
+                <input class="ps-in" id="edit-mem" type="number" min="1" max="64">
+              </div>
+            </div>
           </div>
           <div class="ps-field">
             <button type="button" class="ps-btn ghost" id="edit-regen">&#10227; Regenerate fingerprint</button>

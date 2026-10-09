@@ -540,6 +540,48 @@ $("edit-px-test").addEventListener("click", async () => {
   }
 });
 
+/* ---------------- Edit Fingerprint tab (AdsPower-style) ---------------- */
+// Pill single-select for all edit fingerprint groups.
+document.querySelectorAll("#modal-edit .ps-pills").forEach(group => {
+  group.querySelectorAll(".ps-pill").forEach(pill => {
+    pill.addEventListener("click", () => {
+      group.querySelectorAll(".ps-pill").forEach(p =>
+        p.classList.remove("active"));
+      pill.classList.add("active");
+      // Show/hide custom inputs.
+      if (group.id === "edit-tz-mode")
+        $("edit-tz").hidden = pill.dataset.val !== "custom";
+      if (group.id === "edit-lang-mode")
+        $("edit-locale").hidden = pill.dataset.val !== "custom";
+    });
+  });
+});
+// Toggles.
+document.querySelectorAll("#modal-edit .ps-toggle").forEach(t => {
+  t.addEventListener("click", () => {
+    t.classList.toggle("on");
+    t.setAttribute("aria-checked", t.classList.contains("on"));
+  });
+});
+// Show more.
+$("edit-fp-more").addEventListener("click", () => {
+  const adv = $("edit-fp-advanced");
+  adv.hidden = !adv.hidden;
+  $("edit-fp-more").textContent = adv.hidden ? "Show more ∨" : "Show less ∧";
+});
+$("edit-mediadevice-edit").addEventListener("click", () => {
+  toast("Media device noise is auto-configured per profile", "info");
+});
+
+function editPillVal(id) {
+  const el = document.querySelector(`#${id} .ps-pill.active`);
+  return el ? el.dataset.val : null;
+}
+function editToggleOn(val) {
+  const el = document.querySelector(`#modal-edit .ps-toggle[data-val="${val}"]`);
+  return el ? el.classList.contains("on") : false;
+}
+
 /* ---------------- Full-page New Profile ---------------- */
 function showView(name) {
   $("view-profiles").hidden = name !== "profiles";
@@ -1299,6 +1341,39 @@ function fillEditForm(prof) {
   $("edit-locale").value = fp.locale || "";
   $("edit-ua").value = fp.user_agent || "";
   $("edit-platform").value = fp.platform || "";
+  // fingerprint pills (AdsPower-style)
+  const setPill = (id, val, def) => {
+    const target = val || def;
+    document.querySelectorAll(`#${id} .ps-pill`).forEach(p =>
+      p.classList.toggle("active", p.dataset.val === target));
+  };
+  setPill("edit-webrtc", fp.webrtc_mode, "proxy");
+  setPill("edit-tz-mode", fp.timezone_mode, "ip");
+  setPill("edit-loc-mode", fp.location_mode, "ip");
+  setPill("edit-lang-mode", fp.language_mode, "ip");
+  setPill("edit-displang-mode", fp.display_lang_mode, "based");
+  setPill("edit-screen-mode", fp.screen_mode, "predefined");
+  setPill("edit-fonts-mode", fp.fonts_mode, "default");
+  setPill("edit-webgl-mode", fp.webgl_mode, "custom");
+  setPill("edit-webgpu-mode", fp.webgpu_mode, "based");
+  $("edit-tz").hidden = (fp.timezone_mode || "ip") !== "custom";
+  $("edit-locale").hidden = (fp.language_mode || "ip") !== "custom";
+  // fingerprint toggles
+  const setToggle = (val, on) => {
+    const el = document.querySelector(`#modal-edit .ps-toggle[data-val="${val}"]`);
+    if (el) {
+      el.classList.toggle("on", !!on);
+      el.setAttribute("aria-checked", !!on);
+    }
+  };
+  setToggle("canvas", fp.noise_canvas);
+  setToggle("webgl", fp.noise_webgl);
+  setToggle("audio", fp.noise_audio);
+  setToggle("mediadevice", fp.noise_mediadevice !== false);
+  setToggle("clientrects", fp.noise_clientrects !== false);
+  setToggle("speech", fp.noise_speech !== false);
+  $("edit-fp-advanced").hidden = true;
+  $("edit-fp-more").textContent = "Show more ∨";
   // platform tab
   $("edit-platform-acct").value = prof.platform_acct || "";
   $("edit-startup-urls").value = (prof.startup_urls || []).join("\n");
@@ -1360,9 +1435,24 @@ async function submitEdit(e) {
     custom_proxy: custom_proxy,
     group_name: $("edit-group").value || null,
     timezone: $("edit-tz").value.trim() || null,
+    timezone_mode: editPillVal("edit-tz-mode"),
     locale: $("edit-locale").value.trim() || null,
+    language_mode: editPillVal("edit-lang-mode"),
     user_agent: $("edit-ua").value.trim() || null,
     platform: $("edit-platform").value.trim() || null,
+    webrtc_mode: editPillVal("edit-webrtc"),
+    location_mode: editPillVal("edit-loc-mode"),
+    display_lang_mode: editPillVal("edit-displang-mode"),
+    screen_mode: editPillVal("edit-screen-mode"),
+    fonts_mode: editPillVal("edit-fonts-mode"),
+    webgl_mode: editPillVal("edit-webgl-mode"),
+    webgpu_mode: editPillVal("edit-webgpu-mode"),
+    noise_canvas: editToggleOn("canvas"),
+    noise_webgl: editToggleOn("webgl"),
+    noise_audio: editToggleOn("audio"),
+    noise_mediadevice: editToggleOn("mediadevice"),
+    noise_clientrects: editToggleOn("clientrects"),
+    noise_speech: editToggleOn("speech"),
     webgl_vendor: $("edit-webgl-vendor").value.trim() || null,
     webgl_renderer: $("edit-webgl-renderer").value.trim() || null,
     hardware_concurrency: num("edit-hw"),

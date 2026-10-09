@@ -310,6 +310,22 @@ class ProfileUpdate(BaseModel):
     platform_acct: str | None = None
     startup_urls: list | None = None
     custom_proxy: dict | None = None  # {type, host, port, username, password, save_name}
+    # Fingerprint modes (AdsPower-style)
+    timezone_mode: str | None = None
+    language_mode: str | None = None
+    webrtc_mode: str | None = None
+    location_mode: str | None = None
+    display_lang_mode: str | None = None
+    screen_mode: str | None = None
+    fonts_mode: str | None = None
+    webgl_mode: str | None = None
+    webgpu_mode: str | None = None
+    noise_canvas: bool | None = None
+    noise_webgl: bool | None = None
+    noise_audio: bool | None = None
+    noise_mediadevice: bool | None = None
+    noise_clientrects: bool | None = None
+    noise_speech: bool | None = None
 
 
 class SyncStart(BaseModel):
@@ -704,7 +720,11 @@ def create_app() -> FastAPI:
         # Fingerprint fields.
         for key in ("timezone", "locale", "user_agent", "platform",
                     "webgl_vendor", "webgl_renderer", "hardware_concurrency",
-                    "device_memory"):
+                    "device_memory", "timezone_mode", "language_mode",
+                    "webrtc_mode", "location_mode", "display_lang_mode",
+                    "screen_mode", "fonts_mode", "webgl_mode", "webgpu_mode",
+                    "noise_canvas", "noise_webgl", "noise_audio",
+                    "noise_mediadevice", "noise_clientrects", "noise_speech"):
             val = getattr(body, key)
             if val is not None:
                 fields[key] = val
