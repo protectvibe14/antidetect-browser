@@ -839,13 +839,16 @@ def create_app() -> FastAPI:
                 fresh = generate_persona(
                     name, os=fields.get("os", persona.get("os", "windows")),
                     engine=gen_engine)
+                # Update the nested fingerprint dict (UI reads prof.fingerprint.*).
+                fp = dict(persona.get("fingerprint") or {})
                 for key in ("user_agent", "platform", "timezone", "locale",
                             "screen", "viewport", "webgl_vendor",
                             "webgl_renderer", "hardware_concurrency",
                             "device_memory", "color_depth", "canvas_seed",
                             "fonts", "touch_points"):
                     if key in fresh:
-                        fields[key] = fresh[key]
+                        fp[key] = fresh[key]
+                fields["fingerprint"] = fp
             except Exception as exc:
                 raise HTTPException(
                     500, "fingerprint regeneration failed: %s" % exc)
