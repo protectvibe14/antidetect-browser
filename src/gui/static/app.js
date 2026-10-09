@@ -488,15 +488,7 @@ async function submitBulkEdit(e) {
 }
 
 /* ---------------- Edit Proxy tab (AdsPower-style) ---------------- */
-document.querySelectorAll("#edit-proxy-mode .ps-seg-btn").forEach(btn => {
-  btn.addEventListener("click", () => {
-    document.querySelectorAll("#edit-proxy-mode .ps-seg-btn").forEach(b =>
-      b.classList.toggle("active", b === btn));
-    const custom = btn.dataset.val === "custom";
-    $("edit-proxy-saved").hidden = custom;
-    $("edit-proxy-custom").hidden = !custom;
-  });
-});
+/* (Segmented tab clicks handled by the document delegation listener below.) */
 
 $("edit-px-test").addEventListener("click", async () => {
   const resEl = $("edit-px-result");
@@ -541,27 +533,41 @@ $("edit-px-test").addEventListener("click", async () => {
 });
 
 /* ---------------- Edit Fingerprint tab (AdsPower-style) ---------------- */
-// Pill single-select for all edit fingerprint groups.
-document.querySelectorAll("#modal-edit .ps-pills").forEach(group => {
-  group.querySelectorAll(".ps-pill").forEach(pill => {
-    pill.addEventListener("click", () => {
+// Event delegation for reliability — single document listener handles
+// all pill/toggle/segmented clicks inside the Edit modal.
+document.addEventListener("click", (e) => {
+  const pill = e.target.closest("#modal-edit .ps-pill");
+  if (pill) {
+    const group = pill.closest(".ps-pills");
+    if (group) {
       group.querySelectorAll(".ps-pill").forEach(p =>
         p.classList.remove("active"));
       pill.classList.add("active");
-      // Show/hide custom inputs.
       if (group.id === "edit-tz-mode")
         $("edit-tz").hidden = pill.dataset.val !== "custom";
       if (group.id === "edit-lang-mode")
         $("edit-locale").hidden = pill.dataset.val !== "custom";
-    });
-  });
-});
-// Toggles.
-document.querySelectorAll("#modal-edit .ps-toggle").forEach(t => {
-  t.addEventListener("click", () => {
-    t.classList.toggle("on");
-    t.setAttribute("aria-checked", t.classList.contains("on"));
-  });
+      e.preventDefault();
+      return;
+    }
+  }
+  const tgl = e.target.closest("#modal-edit .ps-toggle");
+  if (tgl) {
+    tgl.classList.toggle("on");
+    tgl.setAttribute("aria-checked", tgl.classList.contains("on"));
+    e.preventDefault();
+    return;
+  }
+  const seg = e.target.closest("#edit-proxy-mode .ps-seg-btn");
+  if (seg) {
+    document.querySelectorAll("#edit-proxy-mode .ps-seg-btn").forEach(b =>
+      b.classList.toggle("active", b === seg));
+    const custom = seg.dataset.val === "custom";
+    $("edit-proxy-saved").hidden = custom;
+    $("edit-proxy-custom").hidden = !custom;
+    e.preventDefault();
+    return;
+  }
 });
 // Show more.
 $("edit-fp-more").addEventListener("click", () => {
