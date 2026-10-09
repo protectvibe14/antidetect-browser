@@ -427,3 +427,10 @@ select.ps-in { cursor: pointer; }
 .ps-platform-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; background: var(--card); border: 1px solid var(--line); border-radius: 20px; font-size: 12px; }
 .ps-platform-chip button { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 14px; }
 .ps-platform-chip button:hover { color: #ff453a; }
+
+/* Fingerprint tab refinements (AdsPower-style) */
+.ps-noise-row { display: flex; flex-wrap: wrap; gap: 12px 20px; }
+.ps-noise-item { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; }
+.ps-radio-row { display: flex; gap: 20px; }
+.ps-radio { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
+.ps-radio input { accent-color: var(--accent); }

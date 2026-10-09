@@ -317,6 +317,7 @@ class ProfileUpdate(BaseModel):
     language_mode: str | None = None
     webrtc_mode: str | None = None
     location_mode: str | None = None
+    location_perm: str | None = None
     display_lang_mode: str | None = None
     screen_mode: str | None = None
     fonts_mode: str | None = None
@@ -645,6 +646,7 @@ def create_app() -> FastAPI:
             "webrtc_mode": persona.get("webrtc_mode"),
             "timezone_mode": persona.get("timezone_mode"),
             "location_mode": persona.get("location_mode"),
+            "location_perm": persona.get("location_perm"),
             "language_mode": persona.get("language_mode"),
             "display_lang_mode": persona.get("display_lang_mode"),
             "screen_mode": persona.get("screen_mode"),
@@ -746,7 +748,8 @@ def create_app() -> FastAPI:
         for key in ("timezone", "locale", "user_agent", "platform",
                     "webgl_vendor", "webgl_renderer", "hardware_concurrency",
                     "device_memory", "timezone_mode", "language_mode",
-                    "webrtc_mode", "location_mode", "display_lang_mode",
+                    "webrtc_mode", "location_mode", "location_perm",
+                    "display_lang_mode",
                     "screen_mode", "fonts_mode", "webgl_mode", "webgpu_mode",
                     "noise_canvas", "noise_webgl", "noise_audio",
                     "noise_mediadevice", "noise_clientrects", "noise_speech"):
@@ -1192,6 +1195,24 @@ def create_app() -> FastAPI:
             return {"user_agent": ua}
         except Exception as exc:
             raise HTTPException(500, "UA generation failed: %s" % exc)
+
+    @app.get("/api/fingerprint/random-renderer")
+    def random_renderer():
+        """Pick a WebGL renderer from the OSS spoofer's known-good list.
+
+        Uses vendor/fp-spoofer configs (browser-fingerprint-spoofer, MIT),
+        not custom-generated strings.
+        """
+        import random as _random
+        renderers = [
+            "ANGLE (Intel, Intel(R) UHD Graphics 620 (0x00005916) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+            "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)",
+            "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002487) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+            "ANGLE (NVIDIA, NVIDIA GeForce GTX 1660 SUPER (0x000021C4) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+            "ANGLE (AMD, AMD Radeon RX 580 (0x000067DF) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+            "ANGLE (Intel, Intel(R) HD Graphics 630 (0x00005912) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        ]
+        return {"renderer": _random.choice(renderers)}
 
     @app.post("/api/proxies/test-custom")
     def test_custom_proxy(payload: dict):

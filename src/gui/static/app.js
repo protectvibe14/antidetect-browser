@@ -547,6 +547,10 @@ document.addEventListener("click", (e) => {
         $("edit-tz").hidden = pill.dataset.val !== "custom";
       if (group.id === "edit-lang-mode")
         $("edit-locale").hidden = pill.dataset.val !== "custom";
+      if (group.id === "edit-screen-mode") {
+        $("edit-screen-preset").hidden = pill.dataset.val !== "predefined";
+        $("edit-screen-custom").hidden = pill.dataset.val !== "custom";
+      }
       e.preventDefault();
       return;
     }
@@ -604,6 +608,18 @@ $("edit-ua-copy").addEventListener("click", async () => {
     await navigator.clipboard.writeText($("edit-ua").value);
     toast("User-Agent copied", "success");
   } catch { toast("Copy failed", "error"); }
+});
+// Renderer shuffle — backend picks from OSS spoofer's known-good list.
+$("edit-renderer-shuffle").addEventListener("click", async () => {
+  try {
+    const resp = await req("GET", "/api/fingerprint/random-renderer");
+    $("edit-webgl-renderer").value = resp.renderer;
+    const vmap = { "Intel": "Google Inc. (Intel)", "NVIDIA": "Google Inc. (NVIDIA)", "AMD": "Google Inc. (AMD)" };
+    for (const k of Object.keys(vmap)) {
+      if (resp.renderer.includes(k)) { $("edit-webgl-vendor").value = vmap[k]; break; }
+    }
+    toast("New renderer", "success");
+  } catch { toast("Failed", "error"); }
 });
 // Merge cookie: append pasted JSON to existing cookies.
 $("edit-cookie-merge").addEventListener("click", () => {
@@ -1483,6 +1499,9 @@ function fillEditForm(prof) {
   setPill("edit-webrtc", fp.webrtc_mode, "proxy");
   setPill("edit-tz-mode", fp.timezone_mode, "ip");
   setPill("edit-loc-mode", fp.location_mode, "ip");
+  const locPerm = fp.location_perm || "ask";
+  document.querySelectorAll('input[name="edit-loc-perm"]').forEach(r =>
+    r.checked = r.value === locPerm);
   setPill("edit-lang-mode", fp.language_mode, "ip");
   setPill("edit-displang-mode", fp.display_lang_mode, "based");
   setPill("edit-screen-mode", fp.screen_mode, "predefined");
@@ -1580,6 +1599,7 @@ async function submitEdit(e) {
     platform: $("edit-platform").value.trim() || null,
     webrtc_mode: editPillVal("edit-webrtc"),
     location_mode: editPillVal("edit-loc-mode"),
+    location_perm: (document.querySelector('input[name="edit-loc-perm"]:checked') || {}).value || "ask",
     display_lang_mode: editPillVal("edit-displang-mode"),
     screen_mode: editPillVal("edit-screen-mode"),
     fonts_mode: editPillVal("edit-fonts-mode"),

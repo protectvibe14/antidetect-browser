@@ -512,6 +512,10 @@
               <button type="button" class="ps-pill" data-val="custom">Custom</button>
               <button type="button" class="ps-pill" data-val="block">Block</button>
             </div>
+            <div class="ps-radio-row" style="margin-top:8px">
+              <label class="ps-radio"><input type="radio" name="edit-loc-perm" value="ask" checked> <span>Ask each time</span></label>
+              <label class="ps-radio"><input type="radio" name="edit-loc-perm" value="allow"> <span>Always allow</span></label>
+            </div>
           </div>
           <div class="ps-field">
             <label class="ps-flabel">Language</label>
@@ -535,7 +539,15 @@
               <button type="button" class="ps-pill active" data-val="predefined">Predefined</button>
               <button type="button" class="ps-pill" data-val="custom">Custom</button>
             </div>
-            <div class="ps-row" style="margin-top:8px">
+            <select class="ps-in" id="edit-screen-preset" style="margin-top:8px">
+              <option value="ua">Based on User-Agent</option>
+              <option value="1920x1080">1920 × 1080</option>
+              <option value="1366x768">1366 × 768</option>
+              <option value="1536x864">1536 × 864</option>
+              <option value="1440x900">1440 × 900</option>
+              <option value="2560x1440">2560 × 1440</option>
+            </select>
+            <div class="ps-row" id="edit-screen-custom" style="margin-top:8px" hidden>
               <div class="ps-field">
                 <input class="ps-in" id="edit-sw" type="number" min="800" max="7680" placeholder="Width">
               </div>
@@ -553,13 +565,13 @@
           </div>
           <div class="ps-field">
             <label class="ps-flabel">Hardware noise</label>
-            <div class="ps-toggles">
-              <label class="ps-toggle-row"><span>Canvas</span><button type="button" class="ps-toggle" data-val="canvas" role="switch" aria-checked="false"><span class="ps-knob"></span></button></label>
-              <label class="ps-toggle-row"><span>WebGL Image</span><button type="button" class="ps-toggle" data-val="webgl" role="switch" aria-checked="false"><span class="ps-knob"></span></button></label>
-              <label class="ps-toggle-row"><span>AudioContext</span><button type="button" class="ps-toggle" data-val="audio" role="switch" aria-checked="false"><span class="ps-knob"></span></button></label>
-              <label class="ps-toggle-row"><span>Media device [Auto]</span><span><button type="button" class="ps-toggle on" data-val="mediadevice" role="switch" aria-checked="true"><span class="ps-knob"></span></button> <button type="button" class="ps-link" id="edit-mediadevice-edit">Edit</button></span></label>
-              <label class="ps-toggle-row"><span>ClientRects</span><button type="button" class="ps-toggle on" data-val="clientrects" role="switch" aria-checked="true"><span class="ps-knob"></span></button></label>
-              <label class="ps-toggle-row"><span>SpeechVoices</span><button type="button" class="ps-toggle on" data-val="speech" role="switch" aria-checked="true"><span class="ps-knob"></span></button></label>
+            <div class="ps-noise-row">
+              <label class="ps-noise-item"><button type="button" class="ps-toggle" data-val="canvas" role="switch" aria-checked="false"><span class="ps-knob"></span></button><span>Canvas</span></label>
+              <label class="ps-noise-item"><button type="button" class="ps-toggle" data-val="webgl" role="switch" aria-checked="false"><span class="ps-knob"></span></button><span>WebGL Image</span></label>
+              <label class="ps-noise-item"><button type="button" class="ps-toggle on" data-val="audio" role="switch" aria-checked="true"><span class="ps-knob"></span></button><span>AudioContext</span></label>
+              <label class="ps-noise-item"><button type="button" class="ps-toggle on" data-val="mediadevice" role="switch" aria-checked="true"><span class="ps-knob"></span></button><span>Media device [Auto]</span> <button type="button" class="ps-link" id="edit-mediadevice-edit">Edit</button></label>
+              <label class="ps-noise-item"><button type="button" class="ps-toggle on" data-val="clientrects" role="switch" aria-checked="true"><span class="ps-knob"></span></button><span>ClientRects</span></label>
+              <label class="ps-noise-item"><button type="button" class="ps-toggle on" data-val="speech" role="switch" aria-checked="true"><span class="ps-knob"></span></button><span>SpeechVoices</span></label>
             </div>
           </div>
           <div class="ps-field">
@@ -579,7 +591,10 @@
             </div>
             <div class="ps-field">
               <label class="ps-flabel" for="edit-webgl-renderer">Renderer</label>
-              <input class="ps-in ps-mono" id="edit-webgl-renderer" type="text" placeholder="ANGLE (Intel, ...)">
+              <div class="ps-in-wrap">
+                <input class="ps-in ps-mono" id="edit-webgl-renderer" type="text" placeholder="ANGLE (Intel, ...)">
+                <button type="button" class="ps-icon-btn" id="edit-renderer-shuffle" title="Random renderer">🔀</button>
+              </div>
             </div>
           </div>
           <div class="ps-field">
@@ -1121,6 +1136,6 @@
 
   <div id="toasts" class="ps-toasts" aria-live="polite"></div>
 
-  <script src="app.js?v=platform1" defer></script>
+  <script src="app.js?v=fprefine1" defer></script>
 </body>
 </html>
