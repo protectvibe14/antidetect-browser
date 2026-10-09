@@ -61,6 +61,43 @@ def _profile_root() -> str:
     return _paths.profiles_dir()
 
 
+# Directories safe to delete on close (cache/temp — logins preserved).
+_CACHE_DIRS = (
+    "cache2", "startupCache", "thumbnails", "crashes", "minidumps",
+    "shader-cache", "jumpListCache", "offlineCache",
+)
+
+
+def _clean_profile_cache(user_data_dir: str) -> None:
+    """Delete cache/temp dirs to save disk space.
+
+    Keeps cookies.sqlite, webappsstore.sqlite (localStorage), prefs.js —
+    so Gmail/logins survive. Can cut profile size from 200MB+ to ~15MB.
+    Safe to call when browser is closed.
+    """
+    import shutil
+    if not user_data_dir or not os.path.isdir(user_data_dir):
+        return
+    for dirname in _CACHE_DIRS:
+        p = os.path.join(user_data_dir, dirname)
+        if os.path.isdir(p):
+            try:
+                shutil.rmtree(p, ignore_errors=True)
+            except Exception:
+                pass
+    # Also clean the default profile subdir if present.
+    for entry in os.listdir(user_data_dir):
+        sub = os.path.join(user_data_dir, entry)
+        if os.path.isdir(sub) and entry.endswith(".default"):
+            for dirname in _CACHE_DIRS:
+                p = os.path.join(sub, dirname)
+                if os.path.isdir(p):
+                    try:
+                        shutil.rmtree(p, ignore_errors=True)
+                    except Exception:
+                        pass
+
+
 def _clear_stale_locks(user_data_dir: str) -> None:
     """Remove stale Firefox profile lock files left by crashed/killed instances.
 
@@ -70,6 +107,8 @@ def _clear_stale_locks(user_data_dir: str) -> None:
     to avoid corrupting a live profile.
     """
     lock_path = os.path.join(user_data_dir, "parent.lock")
+    if not os.path.exists(lock_path):
+        return
     if not os.path.exists(lock_path):
         return
     print("[LOCK] found stale lock: %s" % lock_path)
@@ -263,6 +302,7 @@ class LaunchedProfile:
         self._browser = browser
         self._page = page
         self._closed = False
+        self._user_data_dir = getattr(camoufox, "_user_data_dir", None)
 
     @property
     def page(self):
@@ -288,6 +328,11 @@ class LaunchedProfile:
         # Camoufox.__exit__ closes the context/browser and stops the
         # Playwright session, preventing event-loop leaks in this thread.
         self._camoufox.__exit__(None, None, None)
+        # Clean cache to save disk space (keeps logins intact).
+        try:
+            _clean_profile_cache(self._user_data_dir)
+        except Exception:
+            pass
 
     def __enter__(self):
         return self
@@ -424,7 +469,9 @@ def launch_profile(persona: dict, headless: bool = False) -> LaunchedProfile:
     except Exception:
         camoufox.__exit__(None, None, None)
         raise
-    return LaunchedProfile(camoufox, browser, page)
+    lp = LaunchedProfile(camoufox, browser, page)
+    lp._user_data_dir = kwargs["user_data_dir"]
+    return lp
 
 
 class SharedBrowser:
