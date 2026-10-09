@@ -48,6 +48,62 @@ from typing import Any, Callable, Dict, List, Optional
 PENDING_ACTION_TIMEOUT_S = 300  # 5 minutes, same as upstream's polling loop
 
 _lock = threading.Lock()
+
+
+def _execute_activity_step(page, step: Dict, job_id: str):
+    """Execute an RPAForge-style activity step.
+
+    Simple format: {"type": "click", "selector": "#btn", ...}.
+    See src/rpa/bridge.py for the activity → step mapping.
+    Returns (success: bool, active_page).
+    """
+    stype = step.get("type")
+    sel = step.get("selector", "")
+    try:
+        if stype == "goto":
+            page.goto(step.get("url", ""))
+            page.wait_for_load_state("networkidle", timeout=15000)
+        elif stype == "click":
+            page.locator(sel).first.click(timeout=8000)
+        elif stype == "fill":
+            page.locator(sel).first.fill(step.get("value", ""), timeout=8000)
+        elif stype == "get_text":
+            txt = page.locator(sel).first.inner_text(timeout=8000)
+            log(job_id, f"    → Got text: {txt[:100]}")
+        elif stype == "wait_for":
+            page.locator(sel).first.wait_for(state="visible",
+                timeout=int(step.get("timeout", 8000)))
+        elif stype == "screenshot":
+            page.screenshot(path=step.get("path", "/tmp/rpa_shot.png"))
+        elif stype == "evaluate":
+            page.evaluate(step.get("script", ""))
+        elif stype == "select":
+            page.locator(sel).first.select_option(step.get("value", ""))
+        elif stype == "check":
+            loc = page.locator(sel).first
+            if step.get("checked", True): loc.check()
+            else: loc.uncheck()
+        elif stype == "upload":
+            page.locator(sel).first.set_input_files(step.get("file", ""))
+        elif stype == "dialog":
+            # Dialog handling is set up via page.on("dialog") elsewhere;
+            # this step just logs the intent.
+            log(job_id, f"    → Dialog action: {step.get('action', 'accept')}")
+        elif stype == "get_attribute":
+            val = page.locator(sel).first.get_attribute(
+                step.get("attribute", ""), timeout=8000)
+            log(job_id, f"    → Attribute: {val}")
+        elif stype == "scroll":
+            page.locator(sel).first.scroll_into_view_if_needed(timeout=8000)
+        elif stype == "hover":
+            page.locator(sel).first.hover(timeout=8000)
+        elif stype == "press":
+            page.keyboard.press(step.get("key", "Enter"))
+        log(job_id, f"    ✓ [{stype}] {sel or step.get('url', '')}")
+        return True, page
+    except Exception as e:
+        log(job_id, f"    ✗ [{stype}] failed: {e}")
+        return False, page
 _logs: Dict[str, List[str]] = {}
 _status: Dict[str, str] = {}
 _summaries: Dict[str, Dict] = {}
@@ -643,6 +699,15 @@ def execute_login_steps(page, login_steps: List[Dict], delay: Dict, job_id: str)
 
 def execute_step(page, step: Dict, row: Dict[str, str], delay: Dict, job_id: str):
     """Execute one flow step for one CSV row. Returns (success: bool, active_page)."""
+    # RPAForge bridge: handle simple activity steps (from src/rpa/bridge.py).
+    # These use {"type": "click", "selector": "..."} format instead of
+    # the legacy field_mappings format.
+    if step.get("type") in ("goto", "click", "fill", "get_text", "wait_for",
+                            "screenshot", "evaluate", "select", "check",
+                            "upload", "dialog", "get_attribute", "scroll",
+                            "hover", "press"):
+        return _execute_activity_step(page, step, job_id)
+
     label     = step.get("label", step.get("step_id", "?"))
     url       = step.get("url", "")
     page_to   = delay.get("page_load_timeout_ms", 15000)
