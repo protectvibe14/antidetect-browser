@@ -283,15 +283,6 @@ def build_launch_kwargs(persona: dict, headless: bool = False) -> dict:
     # BrowserForge. Passing a custom dict causes:
     # '"Other" fingerprints are not supported in Camoufox.'
     # Our fingerprint dict is for display/tracking in the dashboard.
-    # Force Firefox to use DIRECT connection (no proxy).
-    # Fixes "cannot connect to 127.0.0.1" when Windows has a stale
-    # system proxy (VPN/antivirus/adblocker) configured.
-    # network.proxy.type: 0=no proxy, 1=manual, 5=system (default).
-    if not proxy:
-        kwargs["firefox_user_prefs"] = {
-            "network.proxy.type": 0,
-            "network.proxy.share_proxy_settings": False,
-        }
     return kwargs
 
 
@@ -501,13 +492,6 @@ def launch_profile(persona: dict, headless: bool = False) -> LaunchedProfile:
             page.goto("about:blank", timeout=5000)
         except Exception:
             pass
-        # If address-bar search is broken (points to 127.0.0.1), give the
-        # user a working search page. Try DuckDuckGo (less likely blocked).
-        try:
-            page.goto("https://duckduckgo.com", wait_until="domcontentloaded",
-                      timeout=10000)
-        except Exception:
-            pass  # Offline - user can still type URLs.
     except Exception:
         camoufox.__exit__(None, None, None)
         raise
