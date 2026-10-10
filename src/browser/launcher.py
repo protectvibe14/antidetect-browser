@@ -713,6 +713,47 @@ def launch_profile(persona: dict, headless: bool = False) -> LaunchedProfile:
             print("[SEARCH] navigation redirect active (all tabs)")
         except Exception as e:
             print("[SEARCH] nav-redirect setup failed: %s" % e)
+        # BACKGROUND MONITOR: Poll all pages every second for 127.0.0.1 URLs.
+        # This catches cases where framenavigated doesn't fire (e.g., address
+        # bar searches in new tabs). Runs in daemon thread.
+        try:
+            import threading
+            import time
+            from urllib.parse import urlparse, parse_qs, urlencode, unquote
+            def _monitor_127001():
+                while True:
+                    try:
+                        time.sleep(1)
+                        pages = browser.pages if hasattr(browser, "pages") else []
+                        for p in pages:
+                            try:
+                                url = p.url or ""
+                                q = None
+                                if "127.0.0.1" in url and ("?q=" in url or "&q=" in url):
+                                    parsed = urlparse(url)
+                                    qs = parse_qs(parsed.query)
+                                    q = qs.get("q", [""])[0]
+                                elif "about:neterror" in url and "127.0.0.1" in url:
+                                    if "u=" in url:
+                                        u_part = url.split("u=", 1)[1].split("&", 1)[0]
+                                        decoded = unquote(u_part)
+                                        if "?q=" in decoded:
+                                            parsed = urlparse(decoded)
+                                            qs = parse_qs(parsed.query)
+                                            q = qs.get("q", [""])[0]
+                                if q:
+                                    google_url = "https://www.google.com/search?" + urlencode({"q": q})
+                                    print("[SEARCH] monitor-redirect '%s' to Google" % q[:30])
+                                    p.goto(google_url, timeout=10000)
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+            _t = threading.Thread(target=_monitor_127001, daemon=True)
+            _t.start()
+            print("[SEARCH] background monitor active")
+        except Exception as e:
+            print("[SEARCH] monitor setup failed: %s" % e)
     except Exception:
         camoufox.__exit__(None, None, None)
         raise
