@@ -582,12 +582,18 @@ def create_app() -> FastAPI:
         if body.os not in _VALID_OS:
             raise HTTPException(
                 400, "os must be one of %s" % (list(_VALID_OS),))
+        # Check for existing (non-deleted) profile. get() returns trashed
+        # ones too, so filter by deleted_at.
         try:
-            _profile_manager.get(name)
+            existing = _profile_manager.get(name)
+            # If get() succeeded, check if it's actually deleted.
+            # We need to check the raw DB; for now, try list with filter.
+            profiles = _profile_manager.list(include_deleted=False)
+            if any(p.get("name") == name for p in profiles):
+                raise HTTPException(409, "profile '%s' already exists" % name)
+            # It's trashed - allow reuse (will be cleared by _insert).
         except KeyError:
             pass
-        else:
-            raise HTTPException(409, "profile '%s' already exists" % name)
         proxy = None
         if body.proxy_name:
             try:
