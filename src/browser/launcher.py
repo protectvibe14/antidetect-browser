@@ -581,7 +581,7 @@ def launch_profile(persona: dict, headless: bool = False) -> LaunchedProfile:
         from urllib.parse import urlparse, parse_qs, urlencode
         def _redirect_127001_search(route):
             url = route.request.url
-            # Match https://127.0.0.1/?q=... or http://127.0.0.1/?q=...
+            # Match any 127.0.0.1 URL with ?q= parameter.
             if "127.0.0.1" in url and ("?q=" in url or "&q=" in url):
                 parsed = urlparse(url)
                 qs = parse_qs(parsed.query)
@@ -589,13 +589,13 @@ def launch_profile(persona: dict, headless: bool = False) -> LaunchedProfile:
                 if q:
                     google_url = "https://www.google.com/search?" + urlencode({"q": q})
                     print("[SEARCH] redirecting 127.0.0.1 search '%s' to Google" % q[:30])
-                    # Rewrite the URL instead of aborting (avoids hanging).
                     route.continue_(url=google_url)
                     return
             route.continue_()
         # Apply to the context (covers all pages).
+        # Use a broad pattern and filter manually (more reliable).
         if hasattr(browser, "route"):
-            browser.route("**://127.0.0.1/**", _redirect_127001_search)
+            browser.route("**/*", _redirect_127001_search)
             print("[SEARCH] 127.0.0.1 search redirect active")
     except Exception as e:
         print("[SEARCH] redirect setup failed: %s" % e)
