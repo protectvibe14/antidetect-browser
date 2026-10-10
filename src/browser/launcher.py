@@ -135,6 +135,36 @@ def _clear_stale_locks(user_data_dir: str) -> None:
         except OSError as exc:
             print("[LOCK] could not remove %s: %s" % (p, exc))
 
+
+def _clear_session_restore(user_data_dir: str) -> None:
+    """Remove Firefox session restore data that may contain 127.0.0.1 URLs.
+
+    When Firefox crashes, it saves the open tabs. On next launch it tries
+    to restore them. If the dashboard URL (127.0.0.1:8765) was open, it
+    will try to load it, causing "can't connect to 127.0.0.1" errors.
+    Clearing session data forces a clean blank-page startup.
+    Does NOT delete cookies, logins, or history.
+    """
+    import shutil
+    # sessionstore.jsonlz4: current session
+    # sessionstore-backups/: backup sessions
+    for name in ("sessionstore.jsonlz4", "sessionstore.js"):
+        p = os.path.join(user_data_dir, name)
+        try:
+            if os.path.isfile(p):
+                os.remove(p)
+                print("[SESSION] cleared: %s" % name)
+        except OSError:
+            pass
+    backup_dir = os.path.join(user_data_dir, "sessionstore-backups")
+    try:
+        if os.path.isdir(backup_dir):
+            shutil.rmtree(backup_dir)
+            print("[SESSION] cleared: sessionstore-backups/")
+    except OSError:
+        pass
+
+
 # persona['os'] -> camoufox `os` kwarg value
 _OS_MAP = {
     "windows": "windows",
@@ -472,6 +502,19 @@ def launch_profile(persona: dict, headless: bool = False) -> LaunchedProfile:
     kwargs = build_launch_kwargs(persona, headless=headless)
     os.makedirs(kwargs["user_data_dir"], exist_ok=True)
     _clear_stale_locks(kwargs["user_data_dir"])
+    _clear_session_restore(kwargs["user_data_dir"])
+
+    # DETAILED LAUNCH LOGGING (user requested for 127.0.0.1 diagnosis).
+    import json
+    print("[LAUNCH] profile='%s' engine=camoufox" % name)
+    print("[LAUNCH] user_data_dir=%s" % kwargs.get("user_data_dir"))
+    # Log kwargs (redact sensitive).
+    safe_kwargs = {k: v for k, v in kwargs.items()
+                   if k not in ("proxy",)}
+    if kwargs.get("proxy"):
+        safe_kwargs["proxy"] = {"server": kwargs["proxy"].get("server", "?"),
+                                "username": "***" if kwargs["proxy"].get("username") else None}
+    print("[LAUNCH] kwargs=%s" % json.dumps(safe_kwargs, default=str)[:500])
 
     camoufox = Camoufox(**kwargs)
     browser = camoufox.__enter__()
@@ -479,6 +522,12 @@ def launch_profile(persona: dict, headless: bool = False) -> LaunchedProfile:
         # Reuse existing page if the persistent profile restored tabs
         # (prevents duplicate windows/tabs).
         existing = browser.pages
+        print("[LAUNCH] restored_pages=%d" % len(existing))
+        for i, p in enumerate(existing):
+            try:
+                print("[LAUNCH] restored_page[%d] url=%s" % (i, p.url[:100]))
+            except Exception:
+                pass
         if existing:
             page = existing[0]
             # Close any extra restored tabs.
