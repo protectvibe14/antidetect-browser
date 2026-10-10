@@ -284,6 +284,14 @@ def build_launch_kwargs(persona: dict, headless: bool = False) -> dict:
     # BrowserForge. Passing a custom dict causes:
     # '"Other" fingerprints are not supported in Camoufox.'
     # Our fingerprint dict is for display/tracking in the dashboard.
+    # Force DIRECT connection (no proxy) when profile has no proxy.
+    # Windows system proxy (VPN/antivirus) at 127.0.0.1 breaks browsing.
+    if not proxy:
+        kwargs["firefox_user_prefs"] = {
+            "network.proxy.type": 0,
+            "network.proxy.share_proxy_settings": False,
+            "network.proxy.autoconfig_url": "",
+        }
     return kwargs
 
 
