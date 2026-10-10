@@ -411,34 +411,59 @@ function selectedNames() {
 
 async function bulkLaunch() {
   const names = selectedNames();
-  let ok = 0;
-  for (const name of names) {
-    try { await api.launch(name); ok++; }
-    catch (e) { /* per-profile errors shown via status */ }
+  if (names.length === 0) { toast("No profiles selected", "error"); return; }
+  // Smart: stagger launches to avoid overwhelming the system.
+  // Launch in waves of 3 with 2s delay between waves.
+  const WAVE = 3, DELAY_MS = 2000;
+  let ok = 0, failed = [];
+  toast(`Launching ${names.length} profiles in waves...`, "info");
+  for (let i = 0; i < names.length; i += WAVE) {
+    const wave = names.slice(i, i + WAVE);
+    const results = await Promise.allSettled(
+      wave.map(n => api.launch(n).then(() => n).catch(e => { throw {name: n, err: e}; }))
+    );
+    for (const r of results) {
+      if (r.status === "fulfilled") ok++;
+      else failed.push(r.reason.name || "?");
+    }
+    // Update progress.
+    const done = Math.min(i + WAVE, names.length);
+    toast(`Launched ${done}/${names.length}...`, "info");
+    if (i + WAVE < names.length) await new Promise(r => setTimeout(r, DELAY_MS));
   }
-  toast(`Launched ${ok}/${names.length}`, ok === names.length ? "success" : "info");
+  if (failed.length) toast(`Launched ${ok}, failed: ${failed.join(", ")}`, "error");
+  else toast(`Launched ${ok} profiles`, "success");
   await refreshProfiles();
 }
 
 async function bulkStop() {
   const names = selectedNames();
-  let ok = 0;
-  for (const name of names) {
-    try { await api.stop(name); ok++; }
-    catch (e) { /* ignore */ }
-  }
-  toast(`Stopped ${ok}/${names.length}`, "success");
+  if (names.length === 0) { toast("No profiles selected", "error"); return; }
+  // Smart: stop all in parallel (fast).
+  const results = await Promise.allSettled(names.map(n => api.stop(n)));
+  const ok = results.filter(r => r.status === "fulfilled").length;
+  toast(`Stopped ${ok}/${names.length}`, ok === names.length ? "success" : "info");
   await refreshProfiles();
 }
 
 async function bulkDelete() {
   const names = selectedNames();
-  if (names.length === 0) return;
+  if (names.length === 0) { toast("No profiles selected", "error"); return; }
   if (!confirm(`Delete ${names.length} profiles? This cannot be undone.`)) return;
+  // Smart: delete in parallel batches, track progress.
   let ok = 0, failed = [];
-  for (const name of names) {
-    try { await api.deleteProfile(name); ok++; state.selected.delete(name); }
-    catch (e) { failed.push(name); }
+  const BATCH = 5;
+  for (let i = 0; i < names.length; i += BATCH) {
+    const batch = names.slice(i, i + BATCH);
+    const results = await Promise.allSettled(
+      batch.map(n => api.deleteProfile(n).then(() => {
+        state.selected.delete(n); return n;
+      }).catch(e => { throw n; }))
+    );
+    for (const r of results) {
+      if (r.status === "fulfilled") ok++;
+      else failed.push(r.reason);
+    }
   }
   if (failed.length) toast(`Deleted ${ok}, failed: ${failed.join(", ")}`, "error");
   else toast(`Deleted ${ok} profiles`, "success");
@@ -2665,12 +2690,13 @@ $("btn-rpa-create").addEventListener("click", async () => {
     else visible.forEach(n => state.selected.delete(n));
     renderTable();
   });
-  $("bulk-launch").addEventListener("click", bulkLaunch);
-  $("bulk-stop").addEventListener("click", bulkStop);
-  $("bulk-edit").addEventListener("click", openBulkEdit);
-  $("bulk-export").addEventListener("click", bulkExport);
-  $("bulk-delete").addEventListener("click", bulkDelete);
-  $("bulk-clear").addEventListener("click", () => {
+  const bl = $("bulk-launch"); if (bl) bl.addEventListener("click", bulkLaunch);
+  const bs = $("bulk-stop"); if (bs) bs.addEventListener("click", bulkStop);
+  const be = $("bulk-edit"); if (be) be.addEventListener("click", openBulkEdit);
+  const bx = $("bulk-export"); if (bx) bx.addEventListener("click", bulkExport);
+  const bd = $("bulk-delete"); if (bd) bd.addEventListener("click", bulkDelete);
+  const bc = $("bulk-clear");
+  if (bc) bc.addEventListener("click", () => {
     state.selected.clear();
     renderTable();
   });
