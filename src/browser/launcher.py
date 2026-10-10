@@ -244,7 +244,8 @@ def build_launch_kwargs(persona: dict, headless: bool = False) -> dict:
     name = persona["name"]
     kwargs = {
         "headless": headless,
-        "humanize": True,
+        # humanize disabled: was causing issues on Windows.
+        # Re-enable after basic launch is stable.
         "os": [_map_os(persona["os"])],
     }
 
