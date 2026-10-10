@@ -291,6 +291,14 @@ def build_launch_kwargs(persona: dict, headless: bool = False) -> dict:
             "network.proxy.type": 0,
             "network.proxy.share_proxy_settings": False,
             "network.proxy.autoconfig_url": "",
+            # Fix broken search engine (points to 127.0.0.1).
+            # Force Google as default search.
+            "browser.search.defaultenginename": "Google",
+            "browser.search.selectedEngine": "Google",
+            "browser.search.order.1": "Google",
+            # Force English UI (not Korean/German/Italian).
+            "intl.locale.requested": "en-US",
+            "general.useragent.locale": "en-US",
         }
     return kwargs
 
@@ -499,14 +507,6 @@ def launch_profile(persona: dict, headless: bool = False) -> LaunchedProfile:
         # from previous session which breaks search.
         try:
             page.goto("about:blank", timeout=5000)
-        except Exception:
-            pass
-        # Diagnostic proved internet works. Now open DuckDuckGo for search.
-        # (Address-bar search is broken - points to 127.0.0.1.
-        # Searching from DuckDuckGo page works fine.)
-        try:
-            page.goto("https://duckduckgo.com", wait_until="domcontentloaded",
-                      timeout=15000)
         except Exception:
             pass
     except Exception:
