@@ -492,6 +492,33 @@ def launch_profile(persona: dict, headless: bool = False) -> LaunchedProfile:
 
     camoufox = Camoufox(**kwargs)
     browser = camoufox.__enter__()
+    # Log process details.
+    try:
+        proc = browser.process if hasattr(browser, "process") else None
+        if proc:
+            print("[LAUNCH] pid=%s" % proc.pid)
+            print("[LAUNCH] exe=%s" % (proc.args[0] if proc.args else "unknown"))
+    except Exception as e:
+        print("[LAUNCH] proc_info_failed: %s" % e)
+    # Check homepage pref in profile (may point to 127.0.0.1).
+    try:
+        prefs_path = os.path.join(kwargs.get("user_data_dir", ""), "prefs.js")
+        if os.path.isfile(prefs_path):
+            with open(prefs_path, "r", encoding="utf-8", errors="ignore") as f:
+                for line in f:
+                    if "browser.startup.homepage" in line or "127.0.0.1" in line:
+                        print("[LAUNCH] prefs.js: %s" % line.strip()[:120])
+                        break
+    except Exception:
+        pass
+    # Log all contexts and pages.
+    try:
+        contexts = browser.contexts if hasattr(browser, "contexts") else []
+        print("[LAUNCH] num_contexts=%d" % len(contexts))
+        for ci, ctx in enumerate(contexts):
+            print("[LAUNCH] context[%d] pages=%d" % (ci, len(ctx.pages)))
+    except Exception:
+        pass
     try:
         # Reuse existing page if the persistent profile restored tabs
         # (prevents duplicate windows/tabs).
