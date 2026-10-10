@@ -491,13 +491,35 @@ def launch_profile(persona: dict, headless: bool = False) -> LaunchedProfile:
     print("[LAUNCH] kwargs=%s" % json.dumps(safe_kwargs, default=str)[:500])
 
     camoufox = Camoufox(**kwargs)
+    # List Firefox processes BEFORE launch (to detect stale ones).
+    try:
+        if os.name == "nt":
+            out = os.popen('tasklist /FI "IMAGENAME eq firefox.exe" 2>nul').read()
+            print("[LAUNCH] firefox.exe processes before: %s" %
+                  ("found" if "firefox.exe" in out.lower() else "none"))
+            out2 = os.popen('tasklist /FI "IMAGENAME eq camoufox.exe" 2>nul').read()
+            print("[LAUNCH] camoufox.exe processes before: %s" %
+                  ("found" if "camoufox.exe" in out2.lower() else "none"))
+    except Exception:
+        pass
     browser = camoufox.__enter__()
+    # List Firefox processes AFTER launch.
+    try:
+        if os.name == "nt":
+            out = os.popen('tasklist /FI "IMAGENAME eq firefox.exe" 2>nul').read()
+            # Count processes.
+            count = out.lower().count("firefox.exe")
+            print("[LAUNCH] firefox.exe processes after: %d" % count)
+    except Exception:
+        pass
     # Log process details.
     try:
         proc = browser.process if hasattr(browser, "process") else None
         if proc:
             print("[LAUNCH] pid=%s" % proc.pid)
             print("[LAUNCH] exe=%s" % (proc.args[0] if proc.args else "unknown"))
+        else:
+            print("[LAUNCH] no process attr (browser is context, not browser)")
     except Exception as e:
         print("[LAUNCH] proc_info_failed: %s" % e)
     # Check homepage pref in profile (may point to 127.0.0.1).
