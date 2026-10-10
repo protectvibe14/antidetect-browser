@@ -1402,6 +1402,12 @@ function renderAll() {
 
 /* ---------------- Actions ---------------- */
 async function onAction(name, act, evt) {
+  // Prevent double-clicks on launch.
+  if (act === "launch" && onAction._launching) return;
+  if (act === "launch") {
+    onAction._launching = true;
+    setTimeout(() => { onAction._launching = false; }, 3000);
+  }
   try {
     if (act === "launch") {
       await api.launch(name);

@@ -474,9 +474,12 @@ def launch_profile(persona: dict, headless: bool = False) -> LaunchedProfile:
     browser = camoufox.__enter__()
     try:
         page = browser.new_page()
-        # Don't auto-navigate - let Firefox show its default new tab page
-        # with search box. Auto-navigating to Google caused issues when
-        # Google is blocked or proxy is misconfigured.
+        # Force blank page - prevents restoring stale dashboard URL (127.0.0.1:8765)
+        # from previous session which breaks search.
+        try:
+            page.goto("about:blank", timeout=5000)
+        except Exception:
+            pass
     except Exception:
         camoufox.__exit__(None, None, None)
         raise
