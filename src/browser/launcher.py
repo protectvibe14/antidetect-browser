@@ -336,6 +336,11 @@ def build_launch_kwargs(persona: dict, headless: bool = False) -> dict:
         # Disable search suggestions to avoid 127.0.0.1 lookups.
         "browser.search.suggest.enabled": False,
         "browser.urlbar.suggest.searches": False,
+        # CRITICAL: Override keyword URL (address bar search).
+        # When user types non-URL in address bar, Firefox uses this.
+        # Default is broken (127.0.0.1). Force Google.
+        "keyword.URL": "https://www.google.com/search?q=",
+        "browser.fixup.alternate.enabled": False,
     }
     return kwargs
 
