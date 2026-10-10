@@ -536,7 +536,7 @@ async function submitBulkEdit(e) {
 /* ---------------- Edit Proxy tab (AdsPower-style) ---------------- */
 /* (Segmented tab clicks handled by the document delegation listener below.) */
 
-$("edit-px-test").addEventListener("click", async () => {
+if ($("edit-px-test")) $("edit-px-test").addEventListener("click", async () => {
   const resEl = $("edit-px-result");
   const custom = !$("edit-proxy-custom").hidden;
   resEl.textContent = "Testing…";
@@ -640,23 +640,23 @@ document.addEventListener("click", (e) => {
   }
 });
 // Show more.
-$("edit-fp-more").addEventListener("click", () => {
+if ($("edit-fp-more")) $("edit-fp-more").addEventListener("click", () => {
   const adv = $("edit-fp-advanced");
   adv.hidden = !adv.hidden;
   $("edit-fp-more").textContent = adv.hidden ? "Show more ∨" : "Show less ∧";
 });
-$("edit-mediadevice-edit").addEventListener("click", () => {
+if ($("edit-mediadevice-edit")) $("edit-mediadevice-edit").addEventListener("click", () => {
   toast("Media device noise is auto-configured per profile", "info");
 });
 // UA copy button.
-$("edit-ua-copy").addEventListener("click", async () => {
+if ($("edit-ua-copy")) $("edit-ua-copy").addEventListener("click", async () => {
   try {
     await navigator.clipboard.writeText($("edit-ua").value);
     toast("User-Agent copied", "success");
   } catch { toast("Copy failed", "error"); }
 });
 // Renderer shuffle — backend picks from OSS spoofer's known-good list.
-$("edit-renderer-shuffle").addEventListener("click", async () => {
+if ($("edit-renderer-shuffle")) $("edit-renderer-shuffle").addEventListener("click", async () => {
   try {
     const resp = await req("GET", "/api/fingerprint/random-renderer");
     $("edit-webgl-renderer").value = resp.renderer;
@@ -668,7 +668,7 @@ $("edit-renderer-shuffle").addEventListener("click", async () => {
   } catch { toast("Failed", "error"); }
 });
 // Merge cookie: append pasted JSON to existing cookies.
-$("edit-cookie-merge").addEventListener("click", () => {
+if ($("edit-cookie-merge")) $("edit-cookie-merge").addEventListener("click", () => {
   const raw = $("edit-cookie").value.trim();
   if (!raw) { toast("Paste cookie JSON first", "info"); return; }
   try {
@@ -678,7 +678,7 @@ $("edit-cookie-merge").addEventListener("click", () => {
   } catch { toast("Invalid cookie JSON", "error"); }
 });
 // Paste proxy from clipboard (host:port:user:pass format).
-$("edit-px-paste").addEventListener("click", async () => {
+if ($("edit-px-paste")) $("edit-px-paste").addEventListener("click", async () => {
   try {
     const text = (await navigator.clipboard.readText()).trim();
     // Try host:port:user:pass or host:port.
@@ -693,7 +693,7 @@ $("edit-px-paste").addEventListener("click", async () => {
   } catch { toast("Clipboard read failed", "error"); }
 });
 // Refresh Change IP URL (open it to rotate IP).
-$("edit-px-refresh-url").addEventListener("click", async () => {
+if ($("edit-px-refresh-url")) $("edit-px-refresh-url").addEventListener("click", async () => {
   const url = $("edit-px-changeurl").value.trim();
   if (!url) { toast("Enter Change IP URL first", "info"); return; }
   try {
@@ -722,7 +722,7 @@ function renderPlatformList() {
     list.appendChild(chip);
   }
 }
-$("edit-add-platform").addEventListener("click", () => {
+if ($("edit-add-platform")) $("edit-add-platform").addEventListener("click", () => {
   // Cycle through platforms or prompt.
   const sel = $("edit-platform-acct");
   const current = sel.value;
@@ -861,12 +861,12 @@ document.querySelectorAll("#new-tabs .ps-tab").forEach(t => {
   });
 });
 
-$("np-cancel").addEventListener("click", () => showView("profiles"));
-$("np-new-fp").addEventListener("click", () => {
+if ($("np-cancel")) $("np-cancel").addEventListener("click", () => showView("profiles"));
+if ($("np-new-fp")) $("np-new-fp").addEventListener("click", () => {
   toast("Fingerprint will be generated on creation", "info");
 });
 // Shuffle: new random UA on every click (AdsPower-style).
-$("np-ua-shuffle").addEventListener("click", async () => {
+if ($("np-ua-shuffle")) $("np-ua-shuffle").addEventListener("click", async () => {
   const os = pillVal("np-os") || "windows";
   const browser = pillVal("np-browser") === "patchright" ? "chrome" : "firefox";
   try {
@@ -878,7 +878,7 @@ $("np-ua-shuffle").addEventListener("click", async () => {
   }
 });
 
-$("form-new-page").addEventListener("submit", async (e) => {
+if ($("form-new-page")) $("form-new-page").addEventListener("submit", async (e) => {
   e.preventDefault();
   const name = $("np-name").value.trim() ||
     `profile-${Date.now().toString(36)}`;
@@ -958,7 +958,7 @@ async function onExtensionUpload(e) {
 }
 
 /* ---------------- Synchronizer UI ---------------- */
-$("nav-sync").addEventListener("click", () => {
+if ($("nav-sync")) $("nav-sync").addEventListener("click", () => {
   populateSyncForm();
   openModal("modal-sync");
 });
@@ -1014,7 +1014,7 @@ async function onSyncStart(e) {
   } catch (err) { toast("Start failed: " + (err.message || err), "error"); }
 }
 
-$("btn-sync-stop").addEventListener("click", async () => {
+if ($("btn-sync-stop")) $("btn-sync-stop").addEventListener("click", async () => {
   if (!state.syncSessionId) return;
   try {
     await api.syncStop(state.syncSessionId);
@@ -1025,7 +1025,7 @@ $("btn-sync-stop").addEventListener("click", async () => {
 });
 
 /* ---------------- RPA UI ---------------- */
-$("nav-rpa").addEventListener("click", () => {
+if ($("nav-rpa")) $("nav-rpa").addEventListener("click", () => {
   // Attach workflow builder first (so button always works).
   try { initWorkflowBuilder(); } catch (e) { console.warn("wf init:", e); }
   try { renderRpaRecipes(); } catch (e) { console.warn("rpa recipes:", e); }
@@ -1355,7 +1355,7 @@ async function onRpaRun(e) {
 }
 
 /* ---------------- Activity log UI ---------------- */
-$("nav-activity").addEventListener("click", () => {
+if ($("nav-activity")) $("nav-activity").addEventListener("click", () => {
   renderActivityList();
   openModal("modal-activity");
 });
@@ -1385,7 +1385,7 @@ async function renderActivityList() {
     </div>`).join("");
 }
 
-$("btn-activity-clear").addEventListener("click", async () => {
+if ($("btn-activity-clear")) $("btn-activity-clear").addEventListener("click", async () => {
   if (!confirm("Clear the activity log?")) return;
   try {
     await api.clearActivity();
@@ -1604,7 +1604,7 @@ async function loadProxyOptions(selId, keepOption) {
 }
 
 /* ---------------- New profile ---------------- */
-$("form-new").addEventListener("submit", async (e) => {
+if ($("form-new")) $("form-new").addEventListener("submit", async (e) => {
   e.preventDefault();
   const payload = {
     name: $("new-name").value.trim(),
@@ -1628,7 +1628,7 @@ $("form-new").addEventListener("submit", async (e) => {
 });
 
 /* ---------------- Bulk import ---------------- */
-$("form-bulk").addEventListener("submit", async (e) => {
+if ($("form-bulk")) $("form-bulk").addEventListener("submit", async (e) => {
   e.preventDefault();
   const file = $("bulk-file").files[0];
   if (!file) { toast("Choose a file first.", "error"); return; }
@@ -1674,7 +1674,7 @@ $("form-bulk").addEventListener("submit", async (e) => {
 });
 
 /* ---------------- Migrate import (AdsPower / GoLogin / Multilogin) ---------------- */
-$("form-migrate").addEventListener("submit", async (e) => {
+if ($("form-migrate")) $("form-migrate").addEventListener("submit", async (e) => {
   e.preventDefault();
   const file = $("migrate-file").files[0];
   if (!file) { toast("Choose a JSON export file first.", "error"); return; }
@@ -1718,7 +1718,7 @@ function openCookies(name) {
   openModal("modal-cookies");
 }
 
-$("btn-ck-export").addEventListener("click", async () => {
+if ($("btn-ck-export")) $("btn-ck-export").addEventListener("click", async () => {
   const name = state.cookiesProfile;
   if (!name) return;
   const box = $("ck-result");
@@ -1734,7 +1734,7 @@ $("btn-ck-export").addEventListener("click", async () => {
   }
 });
 
-$("btn-ck-import").addEventListener("click", async () => {
+if ($("btn-ck-import")) $("btn-ck-import").addEventListener("click", async () => {
   const name = state.cookiesProfile;
   if (!name) return;
   const file = $("ck-file").files[0];
@@ -1772,7 +1772,7 @@ async function openWarmup(name) {
   }
 }
 
-$("form-warmup").addEventListener("submit", async (e) => {
+if ($("form-warmup")) $("form-warmup").addEventListener("submit", async (e) => {
   e.preventDefault();
   const name = _warmupProfile;
   const scenario = $("warmup-scenario").value;
@@ -2044,12 +2044,12 @@ async function regenFingerprint() {
 }
 
 // tab switching handled by document delegation listener above
-$("form-edit").addEventListener("submit", submitEdit);
-$("edit-regen").addEventListener("click", regenFingerprint);
+if ($("form-edit")) $("form-edit").addEventListener("submit", submitEdit);
+if ($("edit-regen")) $("edit-regen").addEventListener("click", regenFingerprint);
 const brfp = $("btn-regen-fp");
 if (brfp) brfp.addEventListener("click", regenFingerprint);
 // Edit modal UA shuffle (AdsPower-style).
-$("edit-ua-shuffle").addEventListener("click", async () => {
+if ($("edit-ua-shuffle")) $("edit-ua-shuffle").addEventListener("click", async () => {
   const os = editOsVal();
   const engine = $("edit-browser").value || "camoufox";
   const browser = engine === "patchright" ? "chrome" : "firefox";
@@ -2127,7 +2127,7 @@ function renderHealth(h) {
 }
 
 /* ---------------- Top bar wiring ---------------- */
-$("btn-new").addEventListener("click", () => showView("new-profile"));
+if ($("btn-new")) $("btn-new").addEventListener("click", () => showView("new-profile"));
 
 // Browser download manager (AdsPower-style).
 async function openDownloads() {
@@ -2180,30 +2180,30 @@ async function openDownloads() {
 }
 const bdl = $("btn-downloads");
 if (bdl) bdl.addEventListener("click", openDownloads);
-$("nav-profiles").addEventListener("click", () => showView("profiles"));
-$("nav-sync").addEventListener("click", () => openSync());
-$("nav-bulk").addEventListener("click", () => {
+if ($("nav-profiles")) $("nav-profiles").addEventListener("click", () => showView("profiles"));
+if ($("nav-sync")) $("nav-sync").addEventListener("click", () => openSync());
+if ($("nav-bulk")) $("nav-bulk").addEventListener("click", () => {
   $("bulk-result").hidden = true;
   $("bulk-result").innerHTML = "";
   openModal("modal-bulk");
 });
-$("nav-import").addEventListener("click", () => {
+if ($("nav-import")) $("nav-import").addEventListener("click", () => {
   $("migrate-result").hidden = true;
   $("migrate-result").innerHTML = "";
   openModal("modal-migrate");
 });
-$("search").addEventListener("input", (e) => {
+if ($("search")) $("search").addEventListener("input", (e) => {
   state.query = e.target.value.trim();
   renderTags();   // keep counts accurate
   renderTable();  // live filter, no refetch
 });
 
 /* ---------------- Groups ---------------- */
-$("group-filter").addEventListener("change", (e) => {
+if ($("group-filter")) $("group-filter").addEventListener("change", (e) => {
   state.group = e.target.value;
   renderTable();
 });
-$("btn-groups").addEventListener("click", openGroupsModal);
+if ($("btn-groups")) $("btn-groups").addEventListener("click", openGroupsModal);
 
 function openGroupsModal() {
   renderGroupsList();
@@ -2255,7 +2255,7 @@ async function onGroupCreate(e) {
 }
 
 /* ---------------- Proxies modal ---------------- */
-$("nav-proxies").addEventListener("click", () => {
+if ($("nav-proxies")) $("nav-proxies").addEventListener("click", () => {
   renderProxiesList();
   openModal("modal-proxies");
 });
@@ -2467,7 +2467,7 @@ async function refreshSyncStatus() {
   }
 }
 
-$("form-sync").addEventListener("submit", async (e) => {
+if ($("form-sync")) $("form-sync").addEventListener("submit", async (e) => {
   e.preventDefault();
   const master = $("sync-master").value;
   const followers = [...$("sync-followers").querySelectorAll("input[type=checkbox]:checked")]
@@ -2491,7 +2491,7 @@ $("form-sync").addEventListener("submit", async (e) => {
   }
 });
 
-$("btn-sync-stop").addEventListener("click", async () => {
+if ($("btn-sync-stop")) $("btn-sync-stop").addEventListener("click", async () => {
   if (!state.syncSessionId) return;
   try {
     await api.syncStop(state.syncSessionId);
@@ -2503,7 +2503,7 @@ $("btn-sync-stop").addEventListener("click", async () => {
   renderSyncStatus(null);
 });
 
-$("sync-typing").addEventListener("change", async (e) => {
+if ($("sync-typing")) $("sync-typing").addEventListener("change", async (e) => {
   if (!state.syncSessionId) return; // applies at start otherwise
   try {
     renderSyncStatus(await api.syncTyping(state.syncSessionId, e.target.value === "1"));
@@ -2642,14 +2642,14 @@ function rpaStopPoll() {
   if (rpa.pollTimer) { clearInterval(rpa.pollTimer); rpa.pollTimer = null; }
 }
 
-$("nav-rpa").addEventListener("click", async () => {
+if ($("nav-rpa")) $("nav-rpa").addEventListener("click", async () => {
   openModal("modal-rpa");
   rpaProfileOptions();
   await rpaRefreshAll();
   rpaStartPoll();
 });
-$("btn-rpa-refresh").addEventListener("click", rpaRefreshAll);
-$("btn-rpa-create").addEventListener("click", async () => {
+if ($("btn-rpa-refresh")) $("btn-rpa-refresh").addEventListener("click", rpaRefreshAll);
+if ($("btn-rpa-create")) $("btn-rpa-create").addEventListener("click", async () => {
   const raw = $("rpa-recipe-json").value.trim();
   if (!raw) { toast("Paste a recipe JSON first.", "error"); return; }
   let body;
