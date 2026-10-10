@@ -136,6 +136,32 @@ def _clear_stale_locks(user_data_dir: str) -> None:
             print("[LOCK] could not remove %s: %s" % (p, exc))
 
 
+def _fix_broken_search_engine(user_data_dir: str) -> None:
+    """Remove corrupted search engine data pointing to 127.0.0.1.
+
+    ROOT CAUSE: Firefox search engine URL template is
+    ``https://127.0.0.1/?q={searchTerms}`` instead of Google.
+    Searching for "fb" produces ``https://127.0.0.1/?q=fb``.
+
+    The search engine definitions live in ``search.json.mozlz4``.
+    If it contains 127.0.0.1, delete it so Firefox recreates
+    with defaults on next launch. Does NOT touch cookies,
+    logins, history, or other profile data.
+    """
+    search_file = os.path.join(user_data_dir, "search.json.mozlz4")
+    if not os.path.isfile(search_file):
+        return
+    try:
+        with open(search_file, "rb") as f:
+            data = f.read()
+            if b"127.0.0.1" not in data:
+                return  # Healthy, leave it alone.
+        os.remove(search_file)
+        print("[SEARCH] removed corrupted search.json.mozlz4 (contained 127.0.0.1)")
+    except OSError as exc:
+        print("[SEARCH] could not check/remove: %s" % exc)
+
+
 # persona['os'] -> camoufox `os` kwarg value
 _OS_MAP = {
     "windows": "windows",
@@ -473,6 +499,7 @@ def launch_profile(persona: dict, headless: bool = False) -> LaunchedProfile:
     kwargs = build_launch_kwargs(persona, headless=headless)
     os.makedirs(kwargs["user_data_dir"], exist_ok=True)
     _clear_stale_locks(kwargs["user_data_dir"])
+    _fix_broken_search_engine(kwargs["user_data_dir"])
     # NOTE: Do NOT clear session restore data here.
     # User explicitly forbade deleting profile data.
     # Instead, we handle 127.0.0.1 URLs surgically after launch (below).
