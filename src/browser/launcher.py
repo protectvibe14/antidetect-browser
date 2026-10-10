@@ -359,6 +359,10 @@ def build_launch_kwargs(persona: dict, headless: bool = False) -> dict:
         # Default is broken (127.0.0.1). Force Google.
         "keyword.URL": "https://www.google.com/search?q=",
         "browser.fixup.alternate.enabled": False,
+        # WORKAROUND: Since address bar search is broken in Camoufox binary,
+        # set homepage to Google so users can search from there.
+        "browser.startup.homepage": "https://www.google.com",
+        "browser.startup.page": 1,  # 1 = show homepage on startup
     }
     return kwargs
 
