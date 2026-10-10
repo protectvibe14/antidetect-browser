@@ -251,6 +251,9 @@ def build_launch_kwargs(persona: dict, headless: bool = False) -> dict:
     locale = persona.get("locale")
     if locale:
         kwargs["locale"] = locale
+    else:
+        # Default to US English - German locale confuses users.
+        kwargs["locale"] = "en-US"
 
     timezone = persona.get("timezone")
     if timezone:
@@ -471,13 +474,9 @@ def launch_profile(persona: dict, headless: bool = False) -> LaunchedProfile:
     browser = camoufox.__enter__()
     try:
         page = browser.new_page()
-        # Navigate to Google so the user can search immediately.
-        # (Blank page confuses users - they expect a search box.)
-        try:
-            page.goto("https://www.google.com", wait_until="domcontentloaded",
-                      timeout=15000)
-        except Exception:
-            pass  # Offline or blocked - user can still type URLs.
+        # Don't auto-navigate - let Firefox show its default new tab page
+        # with search box. Auto-navigating to Google caused issues when
+        # Google is blocked or proxy is misconfigured.
     except Exception:
         camoufox.__exit__(None, None, None)
         raise
@@ -555,11 +554,6 @@ def launch_profile_on(playwright, persona: dict, headless: bool = False) -> Shar
     browser = NewBrowser(playwright, **kwargs)
     try:
         page = browser.new_page()
-        try:
-            page.goto("https://www.google.com", wait_until="domcontentloaded",
-                      timeout=15000)
-        except Exception:
-            pass
     except Exception:
         try:
             browser.close()
