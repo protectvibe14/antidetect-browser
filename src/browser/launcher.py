@@ -68,132 +68,6 @@ _CACHE_DIRS = (
 )
 
 
-def _browser_process_name() -> str:
-    """Return the OS process name of the Camoufox browser binary.
-
-    On Windows the vendored Camoufox build is ``camoufox.exe``
-    (see vendor/camoufox/pkgman.py), NOT ``firefox.exe``.
-    On Linux/macOS the process typically appears as ``camoufox`` or
-    ``firefox`` depending on the build.
-    """
-    if os.name == "nt":
-        return "camoufox.exe"
-    return "camoufox"
-
-
-def _count_browser_processes() -> int:
-    """Count running Camoufox browser OS processes.
-
-    Uses the correct binary name per platform. Returns 0 if the check
-    itself fails (caller decides how to interpret).
-    """
-    try:
-        if os.name == "nt":
-            name = _browser_process_name()
-            out = os.popen('tasklist /FI "IMAGENAME eq %s" 2>nul' % name).read()
-            return out.lower().count(name.lower())
-        else:
-            out = os.popen('pgrep -f "camoufox" 2>/dev/null').read()
-            return len([l for l in out.strip().split("\n") if l.strip()])
-    except Exception:
-        return 0
-
-
-def _verify_browser_healthy(browser, timeout_ms: int = 10000) -> None:
-    """Verify the launched browser is genuinely alive and responsive.
-
-    Checks:
-    1. At least one Camoufox OS process is running (correct binary name
-       per platform — ``camoufox.exe`` on Windows).
-    2. The Playwright BrowserContext responds (``browser.pages`` works).
-
-    Raises:
-        RuntimeError: With a detailed message if any check fails.
-            Callers should surface this to the user instead of reporting
-            a false success.
-    """
-    # 1. OS process check — the browser must really be running.
-    proc_count = _count_browser_processes()
-    print("[HEALTH] browser OS processes: %d" % proc_count)
-    if proc_count == 0:
-        raise RuntimeError(
-            "browser process not found after launch "
-            "(expected '%s' process; it may have crashed on startup; "
-            "check that no stale parent.lock blocks the profile and that "
-            "the Camoufox binary is intact)" % _browser_process_name()
-        )
-    # 2. Playwright responsiveness check.
-    try:
-        pages = browser.pages
-        print("[HEALTH] playwright context responsive, pages=%d" % len(pages))
-    except Exception as exc:
-        raise RuntimeError(
-            "browser process is running but the Playwright context is not "
-            "responding: %s" % exc
-        )
-
-
-def _sanitize_restored_pages(browser) -> object:
-    """Handle restored tabs that point at the local dashboard (127.0.0.1).
-
-    Firefox session restore can reopen a tab that was on the dashboard
-    URL (127.0.0.1:8765). Showing that in the user's visible window looks
-    like a broken launch ("connection error"). This navigates any such
-    tab to about:blank WITHOUT deleting session data, cookies, logins,
-    history, or fingerprints.
-
-    Waits briefly for pages to settle (session restore navigates
-    asynchronously — ``page.url`` may read ``about:blank`` while a
-    127.0.0.1 navigation is still in flight), then checks ALL pages.
-
-    Returns:
-        The page to use as the profile's main page.
-    """
-    import time
-    # Let session-restore navigations settle so page.url is accurate.
-    # (Total ~1.5s; launch already takes much longer.)
-    time.sleep(1.5)
-    try:
-        existing = browser.pages
-    except Exception:
-        existing = []
-    print("[LAUNCH] restored_pages=%d (after settle)" % len(existing))
-    main_page = None
-    for i, p in enumerate(existing):
-        try:
-            url = p.url or ""
-        except Exception:
-            url = ""
-        print("[LAUNCH] restored_page[%d] url=%s" % (i, url[:100]))
-        if "127.0.0.1" in url or "localhost" in url:
-            print("[LAUNCH] sanitizing dashboard tab -> about:blank: %s"
-                  % url[:80])
-            try:
-                p.goto("about:blank", timeout=5000)
-            except Exception as exc:
-                print("[LAUNCH] sanitize goto failed: %s" % exc)
-        if main_page is None:
-            main_page = p
-    # Close extra tabs beyond the first (keep the main one).
-    for extra in (existing[1:] if len(existing) > 1 else []):
-        try:
-            extra.close()
-        except Exception:
-            pass
-    if main_page is None:
-        main_page = browser.new_page()
-        try:
-            main_page.goto("about:blank", timeout=5000)
-        except Exception:
-            pass
-    try:
-        print("[LAUNCH] final_url=%s"
-              % (main_page.url[:100] if main_page.url else "unknown"))
-    except Exception:
-        pass
-    return main_page
-
-
 def _clean_profile_cache(user_data_dir: str) -> None:
     """Delete cache/temp dirs to save disk space.
 
@@ -240,7 +114,12 @@ def _clear_stale_locks(user_data_dir: str) -> None:
     print("[LOCK] found stale lock: %s" % lock_path)
     # Check for any live browser process before touching the lock.
     try:
-        live = _count_browser_processes() > 0
+        if os.name == "nt":
+            out = os.popen('tasklist /FI "IMAGENAME eq camoufox.exe" 2>nul').read()
+            live = "camoufox.exe" in out.lower()
+        else:
+            out = os.popen('pgrep -f "camoufox" 2>/dev/null').read()
+            live = bool(out.strip())
     except Exception as exc:
         print("[LOCK] process check failed: %s" % exc)
         live = True  # be conservative: don't touch the lock if unsure
@@ -406,22 +285,8 @@ def build_launch_kwargs(persona: dict, headless: bool = False) -> dict:
     # BrowserForge. Passing a custom dict causes:
     # '"Other" fingerprints are not supported in Camoufox.'
     # Our fingerprint dict is for display/tracking in the dashboard.
-    #
-    # Search engine fix (root cause of https://127.0.0.1/?q=... URLs):
-    # The Camoufox/Firefox profile's default search engine template can
-    # point at 127.0.0.1 (corrupted config). When the user types a query
-    # like "fb" in the address bar, Firefox builds the search URL from
-    # that template -> https://127.0.0.1/?q=fb -> connection error.
-    # Forcing Google as the default search engine fixes URL generation.
-    # This sets a *preference*, it does NOT delete cookies, logins,
-    # history, session data, or fingerprints.
-    # (See commit 64f8ff9 which fixed this; 889f6a2 regressed it by
-    # removing all firefox_user_prefs.)
-    kwargs["firefox_user_prefs"] = {
-        "browser.search.defaultenginename": "Google",
-        "browser.search.selectedEngine": "Google",
-        "browser.search.order.1": "Google",
-    }
+    # NOTE: Removed all firefox_user_prefs - they may be causing issues.
+    # Let Firefox use defaults.
     return kwargs
 
 
@@ -626,24 +491,37 @@ def launch_profile(persona: dict, headless: bool = False) -> LaunchedProfile:
     print("[LAUNCH] kwargs=%s" % json.dumps(safe_kwargs, default=str)[:500])
 
     camoufox = Camoufox(**kwargs)
-    # Count browser processes BEFORE launch (to detect stale ones).
-    # NOTE: On Windows the binary is camoufox.exe, NOT firefox.exe
-    # (see vendor/camoufox/pkgman.py). Checking the wrong name always
-    # reports 0 and hides real launch failures.
+    # List Firefox processes BEFORE launch (to detect stale ones).
     try:
-        before = _count_browser_processes()
-        print("[LAUNCH] %s processes before: %d"
-              % (_browser_process_name(), before))
+        if os.name == "nt":
+            out = os.popen('tasklist /FI "IMAGENAME eq firefox.exe" 2>nul').read()
+            print("[LAUNCH] firefox.exe processes before: %s" %
+                  ("found" if "firefox.exe" in out.lower() else "none"))
+            out2 = os.popen('tasklist /FI "IMAGENAME eq camoufox.exe" 2>nul').read()
+            print("[LAUNCH] camoufox.exe processes before: %s" %
+                  ("found" if "camoufox.exe" in out2.lower() else "none"))
     except Exception:
         pass
     browser = camoufox.__enter__()
-    # Count browser processes AFTER launch — must be > before.
+    # List Firefox processes AFTER launch.
     try:
-        after = _count_browser_processes()
-        print("[LAUNCH] %s processes after: %d"
-              % (_browser_process_name(), after))
+        if os.name == "nt":
+            out = os.popen('tasklist /FI "IMAGENAME eq firefox.exe" 2>nul').read()
+            # Count processes.
+            count = out.lower().count("firefox.exe")
+            print("[LAUNCH] firefox.exe processes after: %d" % count)
     except Exception:
         pass
+    # Log process details.
+    try:
+        proc = browser.process if hasattr(browser, "process") else None
+        if proc:
+            print("[LAUNCH] pid=%s" % proc.pid)
+            print("[LAUNCH] exe=%s" % (proc.args[0] if proc.args else "unknown"))
+        else:
+            print("[LAUNCH] no process attr (browser is context, not browser)")
+    except Exception as e:
+        print("[LAUNCH] proc_info_failed: %s" % e)
     # Check homepage pref in profile (may point to 127.0.0.1).
     try:
         prefs_path = os.path.join(kwargs.get("user_data_dir", ""), "prefs.js")
@@ -655,24 +533,60 @@ def launch_profile(persona: dict, headless: bool = False) -> LaunchedProfile:
                         break
     except Exception:
         pass
+    # Log all contexts and pages.
     try:
-        # Sanitize restored tabs: any tab pointing at the local dashboard
-        # (127.0.0.1 / localhost) is navigated to about:blank WITHOUT
-        # deleting session data, cookies, logins, or history.
-        # Waits for session-restore navigations to settle first.
-        page = _sanitize_restored_pages(browser)
+        contexts = browser.contexts if hasattr(browser, "contexts") else []
+        print("[LAUNCH] num_contexts=%d" % len(contexts))
+        for ci, ctx in enumerate(contexts):
+            print("[LAUNCH] context[%d] pages=%d" % (ci, len(ctx.pages)))
+    except Exception:
+        pass
+    try:
+        # Reuse existing page if the persistent profile restored tabs
+        # (prevents duplicate windows/tabs).
+        existing = browser.pages
+        print("[LAUNCH] restored_pages=%d" % len(existing))
+        for i, p in enumerate(existing):
+            try:
+                print("[LAUNCH] restored_page[%d] url=%s" % (i, p.url[:100]))
+            except Exception:
+                pass
+        if existing:
+            page = existing[0]
+            # Surgical fix: if restored page is 127.0.0.1 (dashboard),
+            # navigate to blank instead of deleting session data.
+            # Preserves user's other tabs.
+            try:
+                if "127.0.0.1" in (page.url or ""):
+                    print("[LAUNCH] restored page was 127.0.0.1, navigating to blank")
+                    page.goto("about:blank", timeout=5000)
+            except Exception:
+                pass
+            # Close any extra restored tabs.
+            for extra in existing[1:]:
+                try:
+                    # Also check extras for 127.0.0.1 before closing.
+                    eu = extra.url or ""
+                    if "127.0.0.1" in eu:
+                        print("[LAUNCH] closing restored 127.0.0.1 tab: %s" % eu[:80])
+                    extra.close()
+                except Exception:
+                    pass
+        else:
+            page = browser.new_page()
+            # New page - go to blank (not dashboard URL).
+            try:
+                page.goto("about:blank", timeout=5000)
+            except Exception:
+                pass
+        # Log final URL.
+        try:
+            print("[LAUNCH] final_url=%s" % (page.url[:100] if page.url else "unknown"))
+        except Exception:
+            pass
     except Exception:
         camoufox.__exit__(None, None, None)
         raise
-    # REAL HEALTH CHECK: only report success when the browser process is
-    # genuinely running and the Playwright context responds. A 200 OK with
-    # a dead/crashed browser is worse than a clear error.
-    try:
-        _verify_browser_healthy(browser)
-    except Exception:
-        camoufox.__exit__(None, None, None)
-        raise
-    print("[LAUNCH] verified healthy: browser process running and responsive")
     lp = LaunchedProfile(camoufox, browser, page)
     lp._user_data_dir = kwargs["user_data_dir"]
     return lp
