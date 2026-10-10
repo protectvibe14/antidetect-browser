@@ -576,10 +576,8 @@ def launch_profile(persona: dict, headless: bool = False) -> LaunchedProfile:
     # FIX: Intercept 127.0.0.1 search URLs and redirect to Google.
     # Firefox's broken search engine generates https://127.0.0.1/?q={query}.
     # We rewrite these to https://www.google.com/search?q={query} at the
-    # network layer. This fixes the URL generation bug without relying
-    # on Firefox's search configuration.
+    # network layer using route.continue_(url=...).
     try:
-        import re
         from urllib.parse import urlparse, parse_qs, urlencode
         def _redirect_127001_search(route):
             url = route.request.url
@@ -591,12 +589,8 @@ def launch_profile(persona: dict, headless: bool = False) -> LaunchedProfile:
                 if q:
                     google_url = "https://www.google.com/search?" + urlencode({"q": q})
                     print("[SEARCH] redirecting 127.0.0.1 search '%s' to Google" % q[:30])
-                    route.abort()  # Cancel the 127.0.0.1 request
-                    # Navigate the page to Google instead.
-                    try:
-                        route.request.frame.page.goto(google_url, timeout=10000)
-                    except Exception:
-                        pass
+                    # Rewrite the URL instead of aborting (avoids hanging).
+                    route.continue_(url=google_url)
                     return
             route.continue_()
         # Apply to the context (covers all pages).
