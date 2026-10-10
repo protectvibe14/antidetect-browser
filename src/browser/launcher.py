@@ -492,6 +492,13 @@ def launch_profile(persona: dict, headless: bool = False) -> LaunchedProfile:
             page.goto("about:blank", timeout=5000)
         except Exception:
             pass
+        # If address-bar search is broken (points to 127.0.0.1), give the
+        # user a working search page. Try DuckDuckGo (less likely blocked).
+        try:
+            page.goto("https://duckduckgo.com", wait_until="domcontentloaded",
+                      timeout=10000)
+        except Exception:
+            pass  # Offline - user can still type URLs.
     except Exception:
         camoufox.__exit__(None, None, None)
         raise
