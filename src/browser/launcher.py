@@ -573,32 +573,8 @@ def launch_profile(persona: dict, headless: bool = False) -> LaunchedProfile:
             print("[LAUNCH] no process attr (browser is context, not browser)")
     except Exception as e:
         print("[LAUNCH] proc_info_failed: %s" % e)
-    # FIX: Intercept 127.0.0.1 search URLs and redirect to Google.
-    # Firefox's broken search engine generates https://127.0.0.1/?q={query}.
-    # We rewrite these to https://www.google.com/search?q={query} at the
-    # network layer using route.continue_(url=...).
-    try:
-        from urllib.parse import urlparse, parse_qs, urlencode
-        def _redirect_127001_search(route):
-            url = route.request.url
-            # Match any 127.0.0.1 URL with ?q= parameter.
-            if "127.0.0.1" in url and ("?q=" in url or "&q=" in url):
-                parsed = urlparse(url)
-                qs = parse_qs(parsed.query)
-                q = qs.get("q", [""])[0]
-                if q:
-                    google_url = "https://www.google.com/search?" + urlencode({"q": q})
-                    print("[SEARCH] redirecting 127.0.0.1 search '%s' to Google" % q[:30])
-                    route.continue_(url=google_url)
-                    return
-            route.continue_()
-        # Apply to the context (covers all pages).
-        # Use a broad pattern and filter manually (more reliable).
-        if hasattr(browser, "route"):
-            browser.route("**/*", _redirect_127001_search)
-            print("[SEARCH] 127.0.0.1 search redirect active")
-    except Exception as e:
-        print("[SEARCH] redirect setup failed: %s" % e)
+    # NOTE: Route interceptor for 127.0.0.1 was causing hangs.
+    # Using navigation listener instead (see below).
     # Check homepage pref in profile (may point to 127.0.0.1).
     try:
         prefs_path = os.path.join(kwargs.get("user_data_dir", ""), "prefs.js")
@@ -661,6 +637,29 @@ def launch_profile(persona: dict, headless: bool = False) -> LaunchedProfile:
             print("[LAUNCH] final_url=%s" % (page.url[:100] if page.url else "unknown"))
         except Exception:
             pass
+        # FIX: Listen for 127.0.0.1 navigations and redirect to Google.
+        # When user searches via address bar, Firefox navigates to
+        # https://127.0.0.1/?q={query}. We catch this and redirect to
+        # Google. This handles cases where the route interceptor misses.
+        try:
+            from urllib.parse import urlparse, parse_qs, urlencode
+            def _on_navigated(frame):
+                try:
+                    url = frame.url or ""
+                    if "127.0.0.1" in url and ("?q=" in url or "&q=" in url):
+                        parsed = urlparse(url)
+                        qs = parse_qs(parsed.query)
+                        q = qs.get("q", [""])[0]
+                        if q:
+                            google_url = "https://www.google.com/search?" + urlencode({"q": q})
+                            print("[SEARCH] nav-redirect 127.0.0.1 '%s' to Google" % q[:30])
+                            frame.page.goto(google_url, timeout=15000)
+                except Exception:
+                    pass
+            page.on("framenavigated", _on_navigated)
+            print("[SEARCH] navigation redirect active")
+        except Exception as e:
+            print("[SEARCH] nav-redirect setup failed: %s" % e)
     except Exception:
         camoufox.__exit__(None, None, None)
         raise
