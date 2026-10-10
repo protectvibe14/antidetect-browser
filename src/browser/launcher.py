@@ -284,27 +284,8 @@ def build_launch_kwargs(persona: dict, headless: bool = False) -> dict:
     # BrowserForge. Passing a custom dict causes:
     # '"Other" fingerprints are not supported in Camoufox.'
     # Our fingerprint dict is for display/tracking in the dashboard.
-    # Force DIRECT connection (no proxy) when profile has no proxy.
-    # Windows system proxy (VPN/antivirus) at 127.0.0.1 breaks browsing.
-    if not proxy:
-        kwargs["firefox_user_prefs"] = {
-            "network.proxy.type": 0,
-            "network.proxy.share_proxy_settings": False,
-            "network.proxy.autoconfig_url": "",
-            # Fix broken search engine (points to 127.0.0.1).
-            # Force Google as default search.
-            "browser.search.defaultenginename": "Google",
-            "browser.search.selectedEngine": "Google",
-            "browser.search.order.1": "Google",
-            # Force English UI (not Korean/German/Italian).
-            "intl.locale.requested": "en-US",
-            "general.useragent.locale": "en-US",
-            # NEVER restore previous session (was loading 127.0.0.1:8765).
-            # 0=blank, 1=homepage, 3=restore session.
-            "browser.startup.page": 0,
-            "browser.sessionstore.resume_from_crash": False,
-            "browser.sessionstore.restore_on_demand": False,
-        }
+    # NOTE: Removed all firefox_user_prefs - they may be causing issues.
+    # Let Firefox use defaults.
     return kwargs
 
 
