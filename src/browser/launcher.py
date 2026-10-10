@@ -311,8 +311,17 @@ def build_launch_kwargs(persona: dict, headless: bool = False) -> dict:
     # BrowserForge. Passing a custom dict causes:
     # '"Other" fingerprints are not supported in Camoufox.'
     # Our fingerprint dict is for display/tracking in the dashboard.
-    # NOTE: Removed all firefox_user_prefs - they may be causing issues.
-    # Let Firefox use defaults.
+    # FIX: Force working search engine. Camoufox's default search points
+    # to 127.0.0.1 (broken). Explicitly set Google as default.
+    kwargs["firefox_user_prefs"] = {
+        "browser.search.defaultenginename": "Google",
+        "browser.search.order.1": "Google",
+        "browser.search.order.2": "DuckDuckGo",
+        "browser.urlbar.placeholderName": "Google",
+        # Disable search suggestions to avoid 127.0.0.1 lookups.
+        "browser.search.suggest.enabled": False,
+        "browser.urlbar.suggest.searches": False,
+    }
     return kwargs
 
 
