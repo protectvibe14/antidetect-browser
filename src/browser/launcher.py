@@ -136,35 +136,6 @@ def _clear_stale_locks(user_data_dir: str) -> None:
             print("[LOCK] could not remove %s: %s" % (p, exc))
 
 
-def _clear_session_restore(user_data_dir: str) -> None:
-    """Remove Firefox session restore data that may contain 127.0.0.1 URLs.
-
-    When Firefox crashes, it saves the open tabs. On next launch it tries
-    to restore them. If the dashboard URL (127.0.0.1:8765) was open, it
-    will try to load it, causing "can't connect to 127.0.0.1" errors.
-    Clearing session data forces a clean blank-page startup.
-    Does NOT delete cookies, logins, or history.
-    """
-    import shutil
-    # sessionstore.jsonlz4: current session
-    # sessionstore-backups/: backup sessions
-    for name in ("sessionstore.jsonlz4", "sessionstore.js"):
-        p = os.path.join(user_data_dir, name)
-        try:
-            if os.path.isfile(p):
-                os.remove(p)
-                print("[SESSION] cleared: %s" % name)
-        except OSError:
-            pass
-    backup_dir = os.path.join(user_data_dir, "sessionstore-backups")
-    try:
-        if os.path.isdir(backup_dir):
-            shutil.rmtree(backup_dir)
-            print("[SESSION] cleared: sessionstore-backups/")
-    except OSError:
-        pass
-
-
 # persona['os'] -> camoufox `os` kwarg value
 _OS_MAP = {
     "windows": "windows",
@@ -502,7 +473,9 @@ def launch_profile(persona: dict, headless: bool = False) -> LaunchedProfile:
     kwargs = build_launch_kwargs(persona, headless=headless)
     os.makedirs(kwargs["user_data_dir"], exist_ok=True)
     _clear_stale_locks(kwargs["user_data_dir"])
-    _clear_session_restore(kwargs["user_data_dir"])
+    # NOTE: Do NOT clear session restore data here.
+    # User explicitly forbade deleting profile data.
+    # Instead, we handle 127.0.0.1 URLs surgically after launch (below).
 
     # DETAILED LAUNCH LOGGING (user requested for 127.0.0.1 diagnosis).
     import json
@@ -531,18 +504,35 @@ def launch_profile(persona: dict, headless: bool = False) -> LaunchedProfile:
                 pass
         if existing:
             page = existing[0]
+            # Surgical fix: if restored page is 127.0.0.1 (dashboard),
+            # navigate to blank instead of deleting session data.
+            # Preserves user's other tabs.
+            try:
+                if "127.0.0.1" in (page.url or ""):
+                    print("[LAUNCH] restored page was 127.0.0.1, navigating to blank")
+                    page.goto("about:blank", timeout=5000)
+            except Exception:
+                pass
             # Close any extra restored tabs.
             for extra in existing[1:]:
                 try:
+                    # Also check extras for 127.0.0.1 before closing.
+                    eu = extra.url or ""
+                    if "127.0.0.1" in eu:
+                        print("[LAUNCH] closing restored 127.0.0.1 tab: %s" % eu[:80])
                     extra.close()
                 except Exception:
                     pass
         else:
             page = browser.new_page()
-        # Force blank page - prevents stale dashboard URL (127.0.0.1:8765)
-        # from previous session which breaks search.
+            # New page - go to blank (not dashboard URL).
+            try:
+                page.goto("about:blank", timeout=5000)
+            except Exception:
+                pass
+        # Log final URL.
         try:
-            page.goto("about:blank", timeout=5000)
+            print("[LAUNCH] final_url=%s" % (page.url[:100] if page.url else "unknown"))
         except Exception:
             pass
     except Exception:
