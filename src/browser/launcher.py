@@ -664,95 +664,10 @@ def launch_profile(persona: dict, headless: bool = False) -> LaunchedProfile:
             print("[LAUNCH] final_url=%s" % (page.url[:100] if page.url else "unknown"))
         except Exception:
             pass
-        # FIX: Listen for 127.0.0.1 navigations and redirect to Google.
-        # When user searches via address bar, Firefox navigates to
-        # https://127.0.0.1/?q={query}. We catch this and redirect to
-        # Google. Also handles about:neterror pages (Firefox shows these
-        # when 127.0.0.1 connection fails).
-        # IMPORTANT: Attach to ALL pages (including new tabs) via context.
-        try:
-            from urllib.parse import urlparse, parse_qs, urlencode, unquote
-            def _make_nav_handler():
-                def _on_navigated(frame):
-                    try:
-                        url = frame.url or ""
-                        q = None
-                        # Case 1: Direct 127.0.0.1 URL.
-                        if "127.0.0.1" in url and ("?q=" in url or "&q=" in url):
-                            parsed = urlparse(url)
-                            qs = parse_qs(parsed.query)
-                            q = qs.get("q", [""])[0]
-                        # Case 2: Firefox error page for 127.0.0.1.
-                        elif "about:neterror" in url and "127.0.0.1" in url:
-                            if "u=" in url:
-                                u_part = url.split("u=", 1)[1].split("&", 1)[0]
-                                decoded = unquote(u_part)
-                                if "?q=" in decoded or "&q=" in decoded:
-                                    parsed = urlparse(decoded)
-                                    qs = parse_qs(parsed.query)
-                                    q = qs.get("q", [""])[0]
-                        if q:
-                            google_url = "https://www.google.com/search?" + urlencode({"q": q})
-                            print("[SEARCH] nav-redirect 127.0.0.1 '%s' to Google" % q[:30])
-                            frame.page.goto(google_url, timeout=15000)
-                    except Exception:
-                        pass
-                return _on_navigated
-            _handler = _make_nav_handler()
-            # Attach to current page.
-            page.on("framenavigated", _handler)
-            # Attach to all future pages (new tabs).
-            if hasattr(browser, "on"):
-                def _on_new_page(new_page):
-                    try:
-                        new_page.on("framenavigated", _handler)
-                        print("[SEARCH] attached redirect to new tab")
-                    except Exception:
-                        pass
-                browser.on("page", _on_new_page)
-            print("[SEARCH] navigation redirect active (all tabs)")
-        except Exception as e:
-            print("[SEARCH] nav-redirect setup failed: %s" % e)
-        # BACKGROUND MONITOR: Poll all pages every second for 127.0.0.1 URLs.
-        # This catches cases where framenavigated doesn't fire (e.g., address
-        # bar searches in new tabs). Runs in daemon thread.
-        try:
-            import threading
-            import time
-            from urllib.parse import urlparse, parse_qs, urlencode, unquote
-            def _monitor_127001():
-                while True:
-                    try:
-                        time.sleep(1)
-                        pages = browser.pages if hasattr(browser, "pages") else []
-                        for p in pages:
-                            try:
-                                url = p.url or ""
-                                q = None
-                                if "127.0.0.1" in url and ("?q=" in url or "&q=" in url):
-                                    parsed = urlparse(url)
-                                    qs = parse_qs(parsed.query)
-                                    q = qs.get("q", [""])[0]
-                                elif "about:neterror" in url and "127.0.0.1" in url:
-                                    if "u=" in url:
-                                        u_part = url.split("u=", 1)[1].split("&", 1)[0]
-                                        decoded = unquote(u_part)
-                                        if "?q=" in decoded:
-                                            parsed = urlparse(decoded)
-                                            qs = parse_qs(parsed.query)
-                                            q = qs.get("q", [""])[0]
-                                if q:
-                                    google_url = "https://www.google.com/search?" + urlencode({"q": q})
-                                    print("[SEARCH] monitor-redirect '%s' to Google" % q[:30])
-                                    p.goto(google_url, timeout=10000)
-                            except Exception:
-                                pass
-                    except Exception:
-                        pass
-            _t = threading.Thread(target=_monitor_127001, daemon=True)
-            _t.start()
-            print("[SEARCH] background monitor active")
-        except Exception as e:
+        # NOTE: Camoufox intentionally disables address bar search
+        # (points to 127.0.0.1 for privacy). This is beneficial for
+        # anti-detect use - prevents search engine tracking.
+        # Users should search via Google homepage (set as startup page).
             print("[SEARCH] monitor setup failed: %s" % e)
     except Exception:
         camoufox.__exit__(None, None, None)
