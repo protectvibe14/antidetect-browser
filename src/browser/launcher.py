@@ -640,20 +640,34 @@ def launch_profile(persona: dict, headless: bool = False) -> LaunchedProfile:
         # FIX: Listen for 127.0.0.1 navigations and redirect to Google.
         # When user searches via address bar, Firefox navigates to
         # https://127.0.0.1/?q={query}. We catch this and redirect to
-        # Google. This handles cases where the route interceptor misses.
+        # Google. Also handles about:neterror pages (Firefox shows these
+        # when 127.0.0.1 connection fails).
         try:
-            from urllib.parse import urlparse, parse_qs, urlencode
+            from urllib.parse import urlparse, parse_qs, urlencode, unquote
             def _on_navigated(frame):
                 try:
                     url = frame.url or ""
+                    q = None
+                    # Case 1: Direct 127.0.0.1 URL.
                     if "127.0.0.1" in url and ("?q=" in url or "&q=" in url):
                         parsed = urlparse(url)
                         qs = parse_qs(parsed.query)
                         q = qs.get("q", [""])[0]
-                        if q:
-                            google_url = "https://www.google.com/search?" + urlencode({"q": q})
-                            print("[SEARCH] nav-redirect 127.0.0.1 '%s' to Google" % q[:30])
-                            frame.page.goto(google_url, timeout=15000)
+                    # Case 2: Firefox error page (about:neterror) for 127.0.0.1.
+                    # URL looks like: about:neterror?e=...&u=https%3A//127.0.0.1/%3Fq%3D...
+                    elif "about:neterror" in url and "127.0.0.1" in url:
+                        # Extract the encoded original URL from 'u' param.
+                        if "u=" in url:
+                            u_part = url.split("u=", 1)[1].split("&", 1)[0]
+                            decoded = unquote(u_part)
+                            if "?q=" in decoded or "&q=" in decoded:
+                                parsed = urlparse(decoded)
+                                qs = parse_qs(parsed.query)
+                                q = qs.get("q", [""])[0]
+                    if q:
+                        google_url = "https://www.google.com/search?" + urlencode({"q": q})
+                        print("[SEARCH] nav-redirect 127.0.0.1 '%s' to Google" % q[:30])
+                        frame.page.goto(google_url, timeout=15000)
                 except Exception:
                     pass
             page.on("framenavigated", _on_navigated)
