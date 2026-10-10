@@ -978,6 +978,14 @@ def create_app() -> FastAPI:
                 raise HTTPException(
                     409, "profile '%s' is already %s"
                     % (name, entry["status"]))
+            # NUCLEAR: Prevent duplicate launches within 60s (user reports
+            # second browser opening after delay).
+            import time
+            last_launch = entry.get("last_launch_at", 0) if entry else 0
+            if time.time() - last_launch < 60:
+                raise HTTPException(
+                    409, "profile '%s' was launched %ds ago; wait before relaunching"
+                    % (name, int(time.time() - last_launch)))
             # Auto-install: if the browser binary is missing, the worker thread
             # downloads it (status shows "downloading") instead of failing.
             try:
@@ -987,7 +995,8 @@ def create_app() -> FastAPI:
                 binary_ok = False
                 engine = None
             _running[name] = {"status": "downloading" if not binary_ok else "starting",
-                              "launched": None, "error": None}
+                              "launched": None, "error": None,
+                              "last_launch_at": time.time()}
         threading.Thread(target=_launch_worker, args=(name, persona),
                          daemon=True).start()
         _activity_log.record(_actor(request), "profile.launch", name)
@@ -1005,6 +1014,7 @@ def create_app() -> FastAPI:
             launched = entry.get("launched")
             entry["status"] = "stopped"
             entry["launched"] = None
+            entry["last_launch_at"] = 0  # Allow immediate relaunch after stop.
         if launched is not None:
             try:
                 launched.close()
