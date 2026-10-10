@@ -573,6 +573,38 @@ def launch_profile(persona: dict, headless: bool = False) -> LaunchedProfile:
             print("[LAUNCH] no process attr (browser is context, not browser)")
     except Exception as e:
         print("[LAUNCH] proc_info_failed: %s" % e)
+    # FIX: Intercept 127.0.0.1 search URLs and redirect to Google.
+    # Firefox's broken search engine generates https://127.0.0.1/?q={query}.
+    # We rewrite these to https://www.google.com/search?q={query} at the
+    # network layer. This fixes the URL generation bug without relying
+    # on Firefox's search configuration.
+    try:
+        import re
+        from urllib.parse import urlparse, parse_qs, urlencode
+        def _redirect_127001_search(route):
+            url = route.request.url
+            # Match https://127.0.0.1/?q=... or http://127.0.0.1/?q=...
+            if "127.0.0.1" in url and ("?q=" in url or "&q=" in url):
+                parsed = urlparse(url)
+                qs = parse_qs(parsed.query)
+                q = qs.get("q", [""])[0]
+                if q:
+                    google_url = "https://www.google.com/search?" + urlencode({"q": q})
+                    print("[SEARCH] redirecting 127.0.0.1 search '%s' to Google" % q[:30])
+                    route.abort()  # Cancel the 127.0.0.1 request
+                    # Navigate the page to Google instead.
+                    try:
+                        route.request.frame.page.goto(google_url, timeout=10000)
+                    except Exception:
+                        pass
+                    return
+            route.continue_()
+        # Apply to the context (covers all pages).
+        if hasattr(browser, "route"):
+            browser.route("**://127.0.0.1/**", _redirect_127001_search)
+            print("[SEARCH] 127.0.0.1 search redirect active")
+    except Exception as e:
+        print("[SEARCH] redirect setup failed: %s" % e)
     # Check homepage pref in profile (may point to 127.0.0.1).
     try:
         prefs_path = os.path.join(kwargs.get("user_data_dir", ""), "prefs.js")
