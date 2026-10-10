@@ -504,7 +504,6 @@ def launch_profile(persona: dict, headless: bool = False) -> LaunchedProfile:
         # Open network diagnostic page to help debug 127.0.0.1 issues.
         # This shows whether the browser can reach the internet.
         try:
-            import os
             diag_path = os.path.join(os.path.dirname(__file__), "..", "gui",
                                      "static", "diag.html")
             diag_path = os.path.abspath(diag_path)
