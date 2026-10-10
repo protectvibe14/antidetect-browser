@@ -501,15 +501,12 @@ def launch_profile(persona: dict, headless: bool = False) -> LaunchedProfile:
             page.goto("about:blank", timeout=5000)
         except Exception:
             pass
-        # Open network diagnostic page to help debug 127.0.0.1 issues.
-        # This shows whether the browser can reach the internet.
+        # Diagnostic proved internet works. Now open DuckDuckGo for search.
+        # (Address-bar search is broken - points to 127.0.0.1.
+        # Searching from DuckDuckGo page works fine.)
         try:
-            diag_path = os.path.join(os.path.dirname(__file__), "..", "gui",
-                                     "static", "diag.html")
-            diag_path = os.path.abspath(diag_path)
-            if os.path.exists(diag_path):
-                page.goto(f"file:///{diag_path.replace(os.sep, '/')}",
-                          timeout=10000)
+            page.goto("https://duckduckgo.com", wait_until="domcontentloaded",
+                      timeout=15000)
         except Exception:
             pass
     except Exception:
