@@ -642,36 +642,48 @@ def launch_profile(persona: dict, headless: bool = False) -> LaunchedProfile:
         # https://127.0.0.1/?q={query}. We catch this and redirect to
         # Google. Also handles about:neterror pages (Firefox shows these
         # when 127.0.0.1 connection fails).
+        # IMPORTANT: Attach to ALL pages (including new tabs) via context.
         try:
             from urllib.parse import urlparse, parse_qs, urlencode, unquote
-            def _on_navigated(frame):
-                try:
-                    url = frame.url or ""
-                    q = None
-                    # Case 1: Direct 127.0.0.1 URL.
-                    if "127.0.0.1" in url and ("?q=" in url or "&q=" in url):
-                        parsed = urlparse(url)
-                        qs = parse_qs(parsed.query)
-                        q = qs.get("q", [""])[0]
-                    # Case 2: Firefox error page (about:neterror) for 127.0.0.1.
-                    # URL looks like: about:neterror?e=...&u=https%3A//127.0.0.1/%3Fq%3D...
-                    elif "about:neterror" in url and "127.0.0.1" in url:
-                        # Extract the encoded original URL from 'u' param.
-                        if "u=" in url:
-                            u_part = url.split("u=", 1)[1].split("&", 1)[0]
-                            decoded = unquote(u_part)
-                            if "?q=" in decoded or "&q=" in decoded:
-                                parsed = urlparse(decoded)
-                                qs = parse_qs(parsed.query)
-                                q = qs.get("q", [""])[0]
-                    if q:
-                        google_url = "https://www.google.com/search?" + urlencode({"q": q})
-                        print("[SEARCH] nav-redirect 127.0.0.1 '%s' to Google" % q[:30])
-                        frame.page.goto(google_url, timeout=15000)
-                except Exception:
-                    pass
-            page.on("framenavigated", _on_navigated)
-            print("[SEARCH] navigation redirect active")
+            def _make_nav_handler():
+                def _on_navigated(frame):
+                    try:
+                        url = frame.url or ""
+                        q = None
+                        # Case 1: Direct 127.0.0.1 URL.
+                        if "127.0.0.1" in url and ("?q=" in url or "&q=" in url):
+                            parsed = urlparse(url)
+                            qs = parse_qs(parsed.query)
+                            q = qs.get("q", [""])[0]
+                        # Case 2: Firefox error page for 127.0.0.1.
+                        elif "about:neterror" in url and "127.0.0.1" in url:
+                            if "u=" in url:
+                                u_part = url.split("u=", 1)[1].split("&", 1)[0]
+                                decoded = unquote(u_part)
+                                if "?q=" in decoded or "&q=" in decoded:
+                                    parsed = urlparse(decoded)
+                                    qs = parse_qs(parsed.query)
+                                    q = qs.get("q", [""])[0]
+                        if q:
+                            google_url = "https://www.google.com/search?" + urlencode({"q": q})
+                            print("[SEARCH] nav-redirect 127.0.0.1 '%s' to Google" % q[:30])
+                            frame.page.goto(google_url, timeout=15000)
+                    except Exception:
+                        pass
+                return _on_navigated
+            _handler = _make_nav_handler()
+            # Attach to current page.
+            page.on("framenavigated", _handler)
+            # Attach to all future pages (new tabs).
+            if hasattr(browser, "on"):
+                def _on_new_page(new_page):
+                    try:
+                        new_page.on("framenavigated", _handler)
+                        print("[SEARCH] attached redirect to new tab")
+                    except Exception:
+                        pass
+                browser.on("page", _on_new_page)
+            print("[SEARCH] navigation redirect active (all tabs)")
         except Exception as e:
             print("[SEARCH] nav-redirect setup failed: %s" % e)
     except Exception:
