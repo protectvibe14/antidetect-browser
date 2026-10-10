@@ -66,6 +66,17 @@ class TestLaunch127001:
             assert "https://www.google.com/search" in content
             assert "127.0.0.1" not in content
 
+    def test_fix_broken_search_engine_removes_search_json(self):
+        """Should delete search.json.mozlz4 to force rebuild."""
+        import tempfile, os
+        import src.browser.launcher as launcher
+        tmpdir = tempfile.mkdtemp()
+        search_json = os.path.join(tmpdir, "search.json.mozlz4")
+        with open(search_json, "wb") as f:
+            f.write(b"fake corrupted data")
+        launcher._fix_broken_search_engine(tmpdir)
+        assert not os.path.exists(search_json), "search.json.mozlz4 should be deleted"
+
     def test_fix_broken_search_engine_preserves_existing(self):
         """Should not overwrite existing google.xml."""
         import tempfile, os

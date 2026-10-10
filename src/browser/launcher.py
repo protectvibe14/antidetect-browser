@@ -144,22 +144,30 @@ def _fix_broken_search_engine(user_data_dir: str) -> None:
     search engine's URL template points to 127.0.0.1 (broken
     Camoufox default or corrupted profile data).
 
-    FIX: Install a Google OpenSearch descriptor in the profile's
-    ``searchplugins/`` directory. Firefox picks it up on launch.
-    Combined with the ``browser.search.defaultenginename`` pref
-    (set in build_launch_kwargs), this ensures searches go to
-    Google, not 127.0.0.1.
+    FIX:
+    1. Delete search.json.mozlz4 to force Firefox to rebuild from
+       built-ins (removes corrupted 127.0.0.1 template).
+    2. Install a Google OpenSearch descriptor in the profile's
+       ``searchplugins/`` directory.
 
     Does NOT touch cookies, logins, history, or other profile data.
-    Only adds a search plugin XML file.
+    Only touches search configuration files.
     """
+    # Step 1: Remove corrupted search config to force rebuild.
+    search_json = os.path.join(user_data_dir, "search.json.mozlz4")
+    try:
+        if os.path.isfile(search_json):
+            os.remove(search_json)
+            print("[SEARCH] removed search.json.mozlz4 (forcing rebuild)")
+    except OSError:
+        pass
+    # Step 2: Install Google OpenSearch plugin.
     plugins_dir = os.path.join(user_data_dir, "searchplugins")
     try:
         os.makedirs(plugins_dir, exist_ok=True)
     except OSError:
         return
     google_xml = os.path.join(plugins_dir, "google.xml")
-    # Only write if not exists (preserve user's customizations).
     if os.path.isfile(google_xml):
         return
     opensearch = """<OpenSearchDescription xmlns="http://a9.com/-/spec/opensearch/1.1/">
