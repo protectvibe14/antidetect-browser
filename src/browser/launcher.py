@@ -299,6 +299,11 @@ def build_launch_kwargs(persona: dict, headless: bool = False) -> dict:
             # Force English UI (not Korean/German/Italian).
             "intl.locale.requested": "en-US",
             "general.useragent.locale": "en-US",
+            # NEVER restore previous session (was loading 127.0.0.1:8765).
+            # 0=blank, 1=homepage, 3=restore session.
+            "browser.startup.page": 0,
+            "browser.sessionstore.resume_from_crash": False,
+            "browser.sessionstore.restore_on_demand": False,
         }
     return kwargs
 
