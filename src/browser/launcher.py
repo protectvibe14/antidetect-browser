@@ -506,7 +506,8 @@ def launch_profile(persona: dict, headless: bool = False) -> LaunchedProfile:
 
     # DETAILED LAUNCH LOGGING (user requested for 127.0.0.1 diagnosis).
     import json
-    print("[LAUNCH] profile='%s' engine=camoufox" % name)
+    _pname = persona.get("name", "?") if isinstance(persona, dict) else "?"
+    print("[LAUNCH] profile='%s' engine=camoufox" % _pname)
     print("[LAUNCH] user_data_dir=%s" % kwargs.get("user_data_dir"))
     # Log kwargs (redact sensitive).
     safe_kwargs = {k: v for k, v in kwargs.items()
