@@ -53,30 +53,29 @@ class TestLaunch127001:
         import src.browser.launcher as launcher
         assert hasattr(launcher, "_fix_broken_search_engine")
 
-    def test_fix_broken_search_engine_removes_corrupted(self):
-        """Corrupted search.json.mozlz4 (with 127.0.0.1) should be removed."""
+    def test_fix_broken_search_engine_installs_google(self):
+        """Should install google.xml OpenSearch plugin."""
         import tempfile, os
         import src.browser.launcher as launcher
         tmpdir = tempfile.mkdtemp()
-        search_file = os.path.join(tmpdir, "search.json.mozlz4")
-        with open(search_file, "wb") as f:
-            f.write(b"fake data with 127.0.0.1 inside")
         launcher._fix_broken_search_engine(tmpdir)
-        assert not os.path.exists(search_file)
+        google_xml = os.path.join(tmpdir, "searchplugins", "google.xml")
+        assert os.path.isfile(google_xml), "google.xml should be installed"
+        with open(google_xml) as f:
+            content = f.read()
+            assert "https://www.google.com/search" in content
+            assert "127.0.0.1" not in content
 
-    def test_fix_broken_search_engine_preserves_healthy(self):
-        """Healthy search.json.mozlz4 should be preserved."""
+    def test_fix_broken_search_engine_preserves_existing(self):
+        """Should not overwrite existing google.xml."""
         import tempfile, os
         import src.browser.launcher as launcher
         tmpdir = tempfile.mkdtemp()
-        search_file = os.path.join(tmpdir, "search.json.mozlz4")
-        with open(search_file, "wb") as f:
-            f.write(b"fake data with google.com inside")
+        plugins_dir = os.path.join(tmpdir, "searchplugins")
+        os.makedirs(plugins_dir)
+        google_xml = os.path.join(plugins_dir, "google.xml")
+        with open(google_xml, "w") as f:
+            f.write("custom content")
         launcher._fix_broken_search_engine(tmpdir)
-        assert os.path.exists(search_file)
-
-    def test_fix_broken_search_engine_no_file(self):
-        """Should not crash if search file doesn't exist."""
-        import tempfile
-        import src.browser.launcher as launcher
-        launcher._fix_broken_search_engine(tempfile.mkdtemp())
+        with open(google_xml) as f:
+            assert f.read() == "custom content", "Existing file should be preserved"

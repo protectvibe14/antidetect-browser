@@ -137,29 +137,44 @@ def _clear_stale_locks(user_data_dir: str) -> None:
 
 
 def _fix_broken_search_engine(user_data_dir: str) -> None:
-    """Remove corrupted search engine data pointing to 127.0.0.1.
+    """Ensure a working Google search engine is configured.
 
-    ROOT CAUSE: Firefox search engine URL template is
-    ``https://127.0.0.1/?q={searchTerms}`` instead of Google.
-    Searching for "fb" produces ``https://127.0.0.1/?q=fb``.
+    ROOT CAUSE: Firefox generates ``https://127.0.0.1/?q={query}``
+    when the address bar is used. This happens when the default
+    search engine's URL template points to 127.0.0.1 (broken
+    Camoufox default or corrupted profile data).
 
-    The search engine definitions live in ``search.json.mozlz4``.
-    If it contains 127.0.0.1, delete it so Firefox recreates
-    with defaults on next launch. Does NOT touch cookies,
-    logins, history, or other profile data.
+    FIX: Install a Google OpenSearch descriptor in the profile's
+    ``searchplugins/`` directory. Firefox picks it up on launch.
+    Combined with the ``browser.search.defaultenginename`` pref
+    (set in build_launch_kwargs), this ensures searches go to
+    Google, not 127.0.0.1.
+
+    Does NOT touch cookies, logins, history, or other profile data.
+    Only adds a search plugin XML file.
     """
-    search_file = os.path.join(user_data_dir, "search.json.mozlz4")
-    if not os.path.isfile(search_file):
-        return
+    plugins_dir = os.path.join(user_data_dir, "searchplugins")
     try:
-        with open(search_file, "rb") as f:
-            data = f.read()
-            if b"127.0.0.1" not in data:
-                return  # Healthy, leave it alone.
-        os.remove(search_file)
-        print("[SEARCH] removed corrupted search.json.mozlz4 (contained 127.0.0.1)")
+        os.makedirs(plugins_dir, exist_ok=True)
+    except OSError:
+        return
+    google_xml = os.path.join(plugins_dir, "google.xml")
+    # Only write if not exists (preserve user's customizations).
+    if os.path.isfile(google_xml):
+        return
+    opensearch = """<OpenSearchDescription xmlns="http://a9.com/-/spec/opensearch/1.1/">
+<ShortName>Google</ShortName>
+<Description>Google Search</Description>
+<InputEncoding>UTF-8</InputEncoding>
+<Url type="text/html" method="get" template="https://www.google.com/search?q={searchTerms}"/>
+</OpenSearchDescription>
+"""
+    try:
+        with open(google_xml, "w", encoding="utf-8") as f:
+            f.write(opensearch)
+        print("[SEARCH] installed Google OpenSearch plugin")
     except OSError as exc:
-        print("[SEARCH] could not check/remove: %s" % exc)
+        print("[SEARCH] could not install plugin: %s" % exc)
 
 
 # persona['os'] -> camoufox `os` kwarg value
