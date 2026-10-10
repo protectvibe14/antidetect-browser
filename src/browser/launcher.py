@@ -473,8 +473,20 @@ def launch_profile(persona: dict, headless: bool = False) -> LaunchedProfile:
     camoufox = Camoufox(**kwargs)
     browser = camoufox.__enter__()
     try:
-        page = browser.new_page()
-        # Force blank page - prevents restoring stale dashboard URL (127.0.0.1:8765)
+        # Reuse existing page if the persistent profile restored tabs
+        # (prevents duplicate windows/tabs).
+        existing = browser.pages
+        if existing:
+            page = existing[0]
+            # Close any extra restored tabs.
+            for extra in existing[1:]:
+                try:
+                    extra.close()
+                except Exception:
+                    pass
+        else:
+            page = browser.new_page()
+        # Force blank page - prevents stale dashboard URL (127.0.0.1:8765)
         # from previous session which breaks search.
         try:
             page.goto("about:blank", timeout=5000)
@@ -556,7 +568,16 @@ def launch_profile_on(playwright, persona: dict, headless: bool = False) -> Shar
     os.makedirs(kwargs["user_data_dir"], exist_ok=True)
     browser = NewBrowser(playwright, **kwargs)
     try:
-        page = browser.new_page()
+        existing = browser.pages
+        if existing:
+            page = existing[0]
+            for extra in existing[1:]:
+                try:
+                    extra.close()
+                except Exception:
+                    pass
+        else:
+            page = browser.new_page()
     except Exception:
         try:
             browser.close()
