@@ -1402,11 +1402,16 @@ function renderAll() {
 
 /* ---------------- Actions ---------------- */
 async function onAction(name, act, evt) {
-  // Prevent double-clicks on launch.
-  if (act === "launch" && onAction._launching) return;
+  // Prevent double-clicks on launch - disable button immediately.
+  const btn = evt && evt.target ? evt.target.closest("button") : null;
   if (act === "launch") {
+    if (onAction._launching) return;
     onAction._launching = true;
-    setTimeout(() => { onAction._launching = false; }, 3000);
+    if (btn) { btn.disabled = true; }
+    setTimeout(() => {
+      onAction._launching = false;
+      if (btn) { btn.disabled = false; }
+    }, 5000);
   }
   try {
     if (act === "launch") {
