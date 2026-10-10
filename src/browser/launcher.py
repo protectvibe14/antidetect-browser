@@ -275,22 +275,11 @@ def build_launch_kwargs(persona: dict, headless: bool = False) -> dict:
 
     kwargs["persistent_context"] = True
     kwargs["user_data_dir"] = os.path.join(_profile_root(), name)
-
-    # Pass our generated fingerprint to Camoufox (strong OSS fingerprinting).
-    # Camoufox uses this for UA, canvas, WebGL, fonts, etc.
-    fp = persona.get("fingerprint") or {}
-    if fp:
-        # Build Camoufox-compatible fingerprint preset.
-        preset = {}
-        if fp.get("user_agent"):
-            preset["userAgent"] = fp["user_agent"]
-        if fp.get("platform"):
-            # Map platform to Camoufox OS.
-            preset["os"] = _map_os(persona.get("os", "windows"))
-        # Camoufox handles canvas/WebGL spoofing internally with its own
-        # seeds, but we pass our values for consistency.
-        kwargs["fingerprint"] = preset if preset else None
-
+    # NOTE: Do NOT pass our DB fingerprint dict to Camoufox.
+    # Camoufox generates its own strong fingerprints internally from
+    # BrowserForge. Passing a custom dict causes:
+    # '"Other" fingerprints are not supported in Camoufox.'
+    # Our fingerprint dict is for display/tracking in the dashboard.
     return kwargs
 
 
