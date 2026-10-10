@@ -54,17 +54,20 @@ class TestLaunch127001:
         assert hasattr(launcher, "_fix_broken_search_engine")
 
     def test_fix_broken_search_engine_installs_google(self):
-        """Should install google.xml OpenSearch plugin."""
-        import tempfile, os
+        """Should install Enterprise Policy with Google search engine."""
+        import tempfile, os, json
         import src.browser.launcher as launcher
         tmpdir = tempfile.mkdtemp()
         launcher._fix_broken_search_engine(tmpdir)
-        google_xml = os.path.join(tmpdir, "searchplugins", "google.xml")
-        assert os.path.isfile(google_xml), "google.xml should be installed"
-        with open(google_xml) as f:
-            content = f.read()
-            assert "https://www.google.com/search" in content
-            assert "127.0.0.1" not in content
+        policies_file = os.path.join(tmpdir, "distribution", "policies.json")
+        assert os.path.isfile(policies_file), "policies.json should be installed"
+        with open(policies_file) as f:
+            policies = json.load(f)
+            engines = policies["policies"]["SearchEngines"]
+            assert engines["Default"] == "Google"
+            google = engines["Add"][0]
+            assert "google.com/search" in google["URLTemplate"]
+            assert "127.0.0.1" not in google["URLTemplate"]
 
     def test_fix_broken_search_engine_removes_search_json(self):
         """Should delete search.json.mozlz4 to force rebuild."""
@@ -77,16 +80,3 @@ class TestLaunch127001:
         launcher._fix_broken_search_engine(tmpdir)
         assert not os.path.exists(search_json), "search.json.mozlz4 should be deleted"
 
-    def test_fix_broken_search_engine_preserves_existing(self):
-        """Should not overwrite existing google.xml."""
-        import tempfile, os
-        import src.browser.launcher as launcher
-        tmpdir = tempfile.mkdtemp()
-        plugins_dir = os.path.join(tmpdir, "searchplugins")
-        os.makedirs(plugins_dir)
-        google_xml = os.path.join(plugins_dir, "google.xml")
-        with open(google_xml, "w") as f:
-            f.write("custom content")
-        launcher._fix_broken_search_engine(tmpdir)
-        with open(google_xml) as f:
-            assert f.read() == "custom content", "Existing file should be preserved"

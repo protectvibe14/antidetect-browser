@@ -140,19 +140,17 @@ def _fix_broken_search_engine(user_data_dir: str) -> None:
     """Ensure a working Google search engine is configured.
 
     ROOT CAUSE: Firefox generates ``https://127.0.0.1/?q={query}``
-    when the address bar is used. This happens when the default
-    search engine's URL template points to 127.0.0.1 (broken
-    Camoufox default or corrupted profile data).
+    when the address bar is used. This is Camoufox's broken built-in
+    search engine. Profile-level fixes (prefs, OpenSearch XML) are
+    insufficient because Firefox rebuilds from the broken binary.
 
-    FIX:
-    1. Delete search.json.mozlz4 to force Firefox to rebuild from
-       built-ins (removes corrupted 127.0.0.1 template).
-    2. Install a Google OpenSearch descriptor in the profile's
-       ``searchplugins/`` directory.
+    FIX: Use Firefox Enterprise Policy (policies.json) to FORCE a
+    custom Google search engine with the correct URL template.
+    Policies override built-in defaults.
 
     Does NOT touch cookies, logins, history, or other profile data.
-    Only touches search configuration files.
     """
+    import json
     # Step 1: Remove corrupted search config to force rebuild.
     search_json = os.path.join(user_data_dir, "search.json.mozlz4")
     try:
@@ -161,28 +159,40 @@ def _fix_broken_search_engine(user_data_dir: str) -> None:
             print("[SEARCH] removed search.json.mozlz4 (forcing rebuild)")
     except OSError:
         pass
-    # Step 2: Install Google OpenSearch plugin.
-    plugins_dir = os.path.join(user_data_dir, "searchplugins")
+    # Step 2: Install Enterprise Policy to force Google search engine.
+    # policies.json in distribution/ overrides Firefox defaults.
+    dist_dir = os.path.join(user_data_dir, "distribution")
     try:
-        os.makedirs(plugins_dir, exist_ok=True)
+        os.makedirs(dist_dir, exist_ok=True)
     except OSError:
         return
-    google_xml = os.path.join(plugins_dir, "google.xml")
-    if os.path.isfile(google_xml):
-        return
-    opensearch = """<OpenSearchDescription xmlns="http://a9.com/-/spec/opensearch/1.1/">
-<ShortName>Google</ShortName>
-<Description>Google Search</Description>
-<InputEncoding>UTF-8</InputEncoding>
-<Url type="text/html" method="get" template="https://www.google.com/search?q={searchTerms}"/>
-</OpenSearchDescription>
-"""
+    policies_file = os.path.join(dist_dir, "policies.json")
+    policies = {
+        "policies": {
+            "SearchEngines": {
+                "Add": [
+                    {
+                        "Name": "Google",
+                        "URLTemplate": "https://www.google.com/search?q={searchTerms}",
+                        "Method": "GET",
+                        "IconURL": "https://www.google.com/favicon.ico",
+                        "Alias": "google",
+                        "Description": "Google Search"
+                    }
+                ],
+                "Default": "Google",
+                "Remove": []
+            },
+            # Disable search suggestions to avoid 127.0.0.1 lookups.
+            "SearchSuggestEnabled": False,
+        }
+    }
     try:
-        with open(google_xml, "w", encoding="utf-8") as f:
-            f.write(opensearch)
-        print("[SEARCH] installed Google OpenSearch plugin")
+        with open(policies_file, "w", encoding="utf-8") as f:
+            json.dump(policies, f, indent=2)
+        print("[SEARCH] installed Enterprise Policy (forced Google search)")
     except OSError as exc:
-        print("[SEARCH] could not install plugin: %s" % exc)
+        print("[SEARCH] could not install policies: %s" % exc)
 
 
 # persona['os'] -> camoufox `os` kwarg value
