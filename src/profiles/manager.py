@@ -321,10 +321,19 @@ class ProfileManager:
     def _insert(self, persona):
         """Persist a persona; raise ValueError if the name already exists.
 
+        If a soft-deleted (trashed) profile has the same name, it is
+        permanently removed first so the name can be reused.
+
         ``client_tag``/``template``/``engine`` are stored in their own
         columns and are stripped from ``fingerprint_json`` so the data is
         not duplicated.
         """
+        # Free up the name if a trashed profile holds it.
+        with self._connect() as conn:
+            conn.execute(
+                "DELETE FROM profiles WHERE name = ? AND deleted_at IS NOT NULL",
+                (persona["name"],),
+            )
         clean = {k: v for k, v in persona.items() if k not in _META_KEYS}
         row = {
             "name": persona["name"],

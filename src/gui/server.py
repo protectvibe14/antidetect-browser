@@ -894,7 +894,8 @@ def create_app() -> FastAPI:
             _profile_manager.get(name)
         except KeyError:
             raise HTTPException(404, "no profile named '%s'" % name)
-        _profile_manager.delete(name)
+        # Permanent delete so the name can be reused immediately.
+        _profile_manager.delete(name, permanent=True)
         _activity_log.record(_actor(request), "profile.delete", name)
         return {"deleted": True}
 
